@@ -66,3 +66,56 @@ class TestGetPostcodeCoords:
         with patch("urllib.request.urlopen", side_effect=Exception("network error")):
             with pytest.raises(SystemExit):
                 check_spills.get_postcode_coords("GL5 1HE")
+
+
+import urllib.request as _urllib_request
+
+SAMPLE_FEATURE = {
+    "type": "Feature",
+    "geometry": {"type": "Point", "coordinates": [-2.449, 51.752]},
+    "properties": {
+        "Id": "SVT00291",
+        "ReceivingWaterCourse": "RIVER SEVERN",
+        "Latitude": 51.752,
+        "Longitude": -2.449,
+        "LatestEventStart": 1773753148000,
+        "LatestEventEnd": 1773753431000,
+    },
+}
+
+
+class TestQuerySpills:
+    def test_returns_features_list(self):
+        payload = {"type": "FeatureCollection", "features": [SAMPLE_FEATURE]}
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
+            features = check_spills.query_spills(51.745, -2.216, 20, 24)
+        assert len(features) == 1
+        assert features[0]["properties"]["Id"] == "SVT00291"
+
+    def test_returns_empty_list_when_no_results(self):
+        payload = {"type": "FeatureCollection", "features": []}
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
+            features = check_spills.query_spills(51.745, -2.216, 20, 24)
+        assert features == []
+
+    def test_exits_on_network_error(self):
+        with patch("urllib.request.urlopen", side_effect=Exception("network error")):
+            with pytest.raises(SystemExit):
+                check_spills.query_spills(51.745, -2.216, 20, 24)
+
+    def test_url_contains_interval_and_distance(self):
+        payload = {"type": "FeatureCollection", "features": []}
+        captured_url = []
+
+        def capturing_urlopen(url, **kwargs):
+            captured_url.append(url)
+            return _mock_urlopen(payload)
+
+        with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
+            check_spills.query_spills(51.745, -2.216, 20, 24)
+
+        url = captured_url[0]
+        assert "INTERVAL" in url
+        assert "24" in url
+        assert "20000" in url
+        assert "esriSRUnit_Meter" in url

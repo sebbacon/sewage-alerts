@@ -38,6 +38,29 @@ def load_config(path: str = "config.yml") -> dict:
         return yaml.safe_load(f)
 
 
+def query_spills(lat: float, lon: float, radius_km: float, lookback_hours: int) -> list:
+    """Query ArcGIS for overflow events within radius_km and lookback_hours of now."""
+    params = urllib.parse.urlencode({
+        "geometry": f"{lon},{lat}",
+        "geometryType": "esriGeometryPoint",
+        "inSR": "4326",
+        "spatialRel": "esriSpatialRelIntersects",
+        "distance": str(int(radius_km * 1000)),
+        "units": "esriSRUnit_Meter",
+        "where": f"LatestEventStart >= CURRENT_TIMESTAMP - INTERVAL '{lookback_hours}' HOUR",
+        "outFields": "*",
+        "f": "geojson",
+    })
+    url = f"{ARCGIS_URL}?{params}"
+    try:
+        with urllib.request.urlopen(url) as resp:
+            data = json.loads(resp.read())
+        return data.get("features", [])
+    except Exception as exc:
+        print(f"ERROR: Could not query ArcGIS API: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
 def get_postcode_coords(postcode: str) -> tuple[float, float]:
     """Return (latitude, longitude) for a UK postcode via postcodes.io."""
     url = POSTCODES_URL.format(urllib.parse.quote(postcode))
