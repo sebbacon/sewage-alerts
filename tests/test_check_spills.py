@@ -1,4 +1,8 @@
+import json
+
 import pytest
+from unittest.mock import MagicMock, patch
+
 import check_spills
 
 
@@ -42,10 +46,6 @@ class TestValidateLookbackHours:
         assert "7" in err
 
 
-import json
-from unittest.mock import MagicMock, patch
-
-
 def _mock_urlopen(response_data: dict) -> MagicMock:
     """Return a context-manager mock for urllib.request.urlopen."""
     mock_cm = MagicMock()
@@ -67,8 +67,6 @@ class TestGetPostcodeCoords:
             with pytest.raises(SystemExit):
                 check_spills.get_postcode_coords("GL5 1HE")
 
-
-import urllib.request as _urllib_request
 
 SAMPLE_FEATURE = {
     "type": "Feature",

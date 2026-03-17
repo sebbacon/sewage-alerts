@@ -32,28 +32,77 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
-def send_email(
-    subject: str,
-    html: str,
-    text: str,
-    to_addr: str,
-    from_addr: str,
-    password: str,
-) -> None:
-    """Send a multipart HTML/text email via Gmail SMTP SSL."""
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = from_addr
-    msg["To"] = to_addr
-    msg.attach(MIMEText(text, "plain"))
-    msg.attach(MIMEText(html, "html"))
+def load_config(path: str = "config.yml") -> dict:
+    """Load configuration from a YAML file."""
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def validate_lookback_hours(hours: int) -> None:
+    """Warn to stderr if lookback_hours is not a recognised standard value."""
+    if hours not in STANDARD_LOOKBACK_HOURS:
+        print(
+            f"WARNING: lookback_hours={hours} is non-standard (expected 6, 12, or 24). "
+            "Ensure your cron schedule matches.",
+            file=sys.stderr,
+        )
+
+
+def get_postcode_coords(postcode: str) -> tuple[float, float]:
+    """Return (latitude, longitude) for a UK postcode via postcodes.io."""
+    url = POSTCODES_URL.format(urllib.parse.quote(postcode))
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(from_addr, password)
-            server.sendmail(from_addr, to_addr, msg.as_string())
+        with urllib.request.urlopen(url) as resp:
+            data = json.loads(resp.read())
+        result = data["result"]
+        return result["latitude"], result["longitude"]
     except Exception as exc:
-        print(f"ERROR: Could not send email: {exc}", file=sys.stderr)
+        print(f"ERROR: Could not look up postcode '{postcode}': {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+def query_spills(lat: float, lon: float, radius_km: float, lookback_hours: int) -> list:
+    """Query ArcGIS for overflow events within radius_km and lookback_hours of now."""
+    params = urllib.parse.urlencode({
+        "geometry": f"{lon},{lat}",
+        "geometryType": "esriGeometryPoint",
+        "inSR": "4326",
+        "spatialRel": "esriSpatialRelIntersects",
+        "distance": str(int(radius_km * 1000)),
+        "units": "esriSRUnit_Meter",
+        "where": f"LatestEventStart >= CURRENT_TIMESTAMP - INTERVAL '{lookback_hours}' HOUR",
+        "outFields": "*",
+        "f": "geojson",
+    })
+    url = f"{ARCGIS_URL}?{params}"
+    try:
+        with urllib.request.urlopen(url) as resp:
+            data = json.loads(resp.read())
+        return data.get("features", [])
+    except Exception as exc:
+        print(f"ERROR: Could not query ArcGIS API: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _fmt_epoch_ms(epoch_ms) -> str:
+    """Format an epoch-millisecond timestamp as a UTC string, or 'Ongoing' if falsy."""
+    if not epoch_ms:
+        return "Ongoing"
+    dt = datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc)
+    return dt.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def format_spill_row(feature: dict, home_lat: float, home_lon: float) -> dict:
+    """Return a display-ready dict for one spill feature."""
+    props = feature["properties"]
+    distance = haversine_km(home_lat, home_lon, props["Latitude"], props["Longitude"])
+    return {
+        "site_id": props["Id"],
+        "watercourse": props["ReceivingWaterCourse"],
+        "distance_km": round(distance, 1),
+        "started": _fmt_epoch_ms(props.get("LatestEventStart")),
+        "ended": _fmt_epoch_ms(props.get("LatestEventEnd")),
+    }
 
 
 def build_html_email(rows: list, postcode: str, radius_km: float) -> tuple[str, str]:
@@ -96,80 +145,34 @@ def build_text_email(rows: list, postcode: str, radius_km: float) -> str:
     return "\n".join(lines)
 
 
-def load_config(path: str = "config.yml") -> dict:
-    """Load configuration from a YAML file."""
-    with open(path) as f:
-        return yaml.safe_load(f)
-
-
-def query_spills(lat: float, lon: float, radius_km: float, lookback_hours: int) -> list:
-    """Query ArcGIS for overflow events within radius_km and lookback_hours of now."""
-    params = urllib.parse.urlencode({
-        "geometry": f"{lon},{lat}",
-        "geometryType": "esriGeometryPoint",
-        "inSR": "4326",
-        "spatialRel": "esriSpatialRelIntersects",
-        "distance": str(int(radius_km * 1000)),
-        "units": "esriSRUnit_Meter",
-        "where": f"LatestEventStart >= CURRENT_TIMESTAMP - INTERVAL '{lookback_hours}' HOUR",
-        "outFields": "*",
-        "f": "geojson",
-    })
-    url = f"{ARCGIS_URL}?{params}"
+def send_email(
+    subject: str,
+    html: str,
+    text: str,
+    to_addr: str,
+    from_addr: str,
+    password: str,
+) -> None:
+    """Send a multipart HTML/text email via Gmail SMTP SSL."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to_addr
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
     try:
-        with urllib.request.urlopen(url) as resp:
-            data = json.loads(resp.read())
-        return data.get("features", [])
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(from_addr, password)
+            server.sendmail(from_addr, to_addr, msg.as_string())
     except Exception as exc:
-        print(f"ERROR: Could not query ArcGIS API: {exc}", file=sys.stderr)
+        print(f"ERROR: Could not send email: {exc}", file=sys.stderr)
         sys.exit(1)
-
-
-def get_postcode_coords(postcode: str) -> tuple[float, float]:
-    """Return (latitude, longitude) for a UK postcode via postcodes.io."""
-    url = POSTCODES_URL.format(urllib.parse.quote(postcode))
-    try:
-        with urllib.request.urlopen(url) as resp:
-            data = json.loads(resp.read())
-        result = data["result"]
-        return result["latitude"], result["longitude"]
-    except Exception as exc:
-        print(f"ERROR: Could not look up postcode '{postcode}': {exc}", file=sys.stderr)
-        sys.exit(1)
-
-
-def _fmt_epoch_ms(epoch_ms) -> str:
-    """Format an epoch-millisecond timestamp as a UTC string, or 'Ongoing' if falsy."""
-    if not epoch_ms:
-        return "Ongoing"
-    dt = datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc)
-    return dt.strftime("%Y-%m-%d %H:%M UTC")
-
-
-def format_spill_row(feature: dict, home_lat: float, home_lon: float) -> dict:
-    """Return a display-ready dict for one spill feature."""
-    props = feature["properties"]
-    distance = haversine_km(home_lat, home_lon, props["Latitude"], props["Longitude"])
-    return {
-        "site_id": props["Id"],
-        "watercourse": props["ReceivingWaterCourse"],
-        "distance_km": round(distance, 1),
-        "started": _fmt_epoch_ms(props.get("LatestEventStart")),
-        "ended": _fmt_epoch_ms(props.get("LatestEventEnd")),
-    }
-
-
-def validate_lookback_hours(hours: int) -> None:
-    """Warn to stderr if lookback_hours is not a recognised standard value."""
-    if hours not in STANDARD_LOOKBACK_HOURS:
-        print(
-            f"WARNING: lookback_hours={hours} is non-standard (expected 6, 12, or 24). "
-            "Ensure your cron schedule matches.",
-            file=sys.stderr,
-        )
 
 
 def main(config_path: str = "config.yml") -> None:
+    from_addr = os.environ["GMAIL_ADDRESS"]
+    password = os.environ["GMAIL_APP_PASSWORD"]
+
     config = load_config(config_path)
     postcode = config["postcode"]
     radius_km = config["radius_km"]
@@ -188,9 +191,6 @@ def main(config_path: str = "config.yml") -> None:
     rows = [format_spill_row(f, home_lat, home_lon) for f in features]
     subject, html = build_html_email(rows, postcode, radius_km)
     text = build_text_email(rows, postcode, radius_km)
-
-    from_addr = os.environ["GMAIL_ADDRESS"]
-    password = os.environ["GMAIL_APP_PASSWORD"]
 
     send_email(subject, html, text, notify_email, from_addr, password)
     print(f"Alert sent: {subject}")
