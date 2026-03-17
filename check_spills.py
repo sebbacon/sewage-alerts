@@ -32,6 +32,30 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
+def send_email(
+    subject: str,
+    html: str,
+    text: str,
+    to_addr: str,
+    from_addr: str,
+    password: str,
+) -> None:
+    """Send a multipart HTML/text email via Gmail SMTP SSL."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to_addr
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(from_addr, password)
+            server.sendmail(from_addr, to_addr, msg.as_string())
+    except Exception as exc:
+        print(f"ERROR: Could not send email: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
 def build_html_email(rows: list, postcode: str, radius_km: float) -> tuple[str, str]:
     """Return (subject, html_body) for the spill alert email."""
     count = len(rows)

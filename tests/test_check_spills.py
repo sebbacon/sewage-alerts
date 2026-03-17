@@ -191,3 +191,36 @@ class TestBuildTextEmail:
         assert "RIVER TEST" in text
         assert "Ongoing" in text
         assert "GL5 1HE" in text
+
+
+class TestSendEmail:
+    def test_calls_smtp_login_and_sendmail(self):
+        mock_server = MagicMock()
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_server
+        mock_smtp_cm.__exit__.return_value = False
+
+        with patch("smtplib.SMTP_SSL", return_value=mock_smtp_cm) as mock_smtp:
+            check_spills.send_email(
+                subject="Test subject",
+                html="<p>html</p>",
+                text="plain text",
+                to_addr="to@example.com",
+                from_addr="from@gmail.com",
+                password="app_password",
+            )
+
+        mock_smtp.assert_called_once_with("smtp.gmail.com", 465)
+        mock_server.login.assert_called_once_with("from@gmail.com", "app_password")
+        mock_server.sendmail.assert_called_once()
+        args = mock_server.sendmail.call_args[0]
+        assert args[0] == "from@gmail.com"
+        assert args[1] == "to@example.com"
+
+    def test_exits_on_smtp_error(self):
+        with patch("smtplib.SMTP_SSL", side_effect=Exception("connection refused")):
+            with pytest.raises(SystemExit):
+                check_spills.send_email(
+                    "subj", "<p>html</p>", "text",
+                    "to@example.com", "from@gmail.com", "pw",
+                )
