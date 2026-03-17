@@ -224,3 +224,57 @@ class TestSendEmail:
                     "subj", "<p>html</p>", "text",
                     "to@example.com", "from@gmail.com", "pw",
                 )
+
+
+class TestMain:
+    BASE_CONFIG = {
+        "postcode": "GL5 1HE",
+        "radius_km": 20,
+        "lookback_hours": 24,
+        "notify_email": "user@example.com",
+    }
+
+    def test_no_email_when_no_spills(self, tmp_path):
+        config_file = tmp_path / "config.yml"
+        import yaml as _yaml
+        config_file.write_text(_yaml.dump(self.BASE_CONFIG))
+
+        empty_features = {"type": "FeatureCollection", "features": []}
+        postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
+
+        def fake_urlopen(url, **kwargs):
+            if "postcodes.io" in url:
+                return _mock_urlopen(postcode_payload)
+            return _mock_urlopen(empty_features)
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+             patch("smtplib.SMTP_SSL") as mock_smtp, \
+             patch.dict("os.environ", {"GMAIL_ADDRESS": "sender@gmail.com", "GMAIL_APP_PASSWORD": "pw"}):
+            check_spills.main(config_path=str(config_file))
+
+        mock_smtp.assert_not_called()
+
+    def test_sends_email_when_spills_found(self, tmp_path):
+        config_file = tmp_path / "config.yml"
+        import yaml as _yaml
+        config_file.write_text(_yaml.dump(self.BASE_CONFIG))
+
+        features_payload = {"type": "FeatureCollection", "features": [SAMPLE_FEATURE]}
+        postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
+
+        def fake_urlopen(url, **kwargs):
+            if "postcodes.io" in url:
+                return _mock_urlopen(postcode_payload)
+            return _mock_urlopen(features_payload)
+
+        mock_server = MagicMock()
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_server
+        mock_smtp_cm.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+             patch("smtplib.SMTP_SSL", return_value=mock_smtp_cm), \
+             patch.dict("os.environ", {"GMAIL_ADDRESS": "sender@gmail.com", "GMAIL_APP_PASSWORD": "pw"}):
+            check_spills.main(config_path=str(config_file))
+
+        mock_server.sendmail.assert_called_once()

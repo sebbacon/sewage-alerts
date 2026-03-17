@@ -169,5 +169,32 @@ def validate_lookback_hours(hours: int) -> None:
         )
 
 
+def main(config_path: str = "config.yml") -> None:
+    config = load_config(config_path)
+    postcode = config["postcode"]
+    radius_km = config["radius_km"]
+    lookback_hours = config["lookback_hours"]
+    notify_email = config["notify_email"]
+
+    validate_lookback_hours(lookback_hours)
+
+    home_lat, home_lon = get_postcode_coords(postcode)
+    features = query_spills(home_lat, home_lon, radius_km, lookback_hours)
+
+    if not features:
+        print(f"No spills found within {radius_km}km of {postcode} in the last {lookback_hours}h.")
+        return
+
+    rows = [format_spill_row(f, home_lat, home_lon) for f in features]
+    subject, html = build_html_email(rows, postcode, radius_km)
+    text = build_text_email(rows, postcode, radius_km)
+
+    from_addr = os.environ["GMAIL_ADDRESS"]
+    password = os.environ["GMAIL_APP_PASSWORD"]
+
+    send_email(subject, html, text, notify_email, from_addr, password)
+    print(f"Alert sent: {subject}")
+
+
 if __name__ == "__main__":
-    pass
+    main()
