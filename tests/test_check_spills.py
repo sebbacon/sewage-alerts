@@ -16,3 +16,27 @@ class TestHaversineKm:
         dist = check_spills.haversine_km(51.745, -2.216, 51.752, -2.449)
         assert dist < 20
         assert dist > 0
+
+
+class TestLoadConfig:
+    def test_loads_all_fields(self, tmp_path):
+        f = tmp_path / "config.yml"
+        f.write_text("postcode: GL5 1HE\nradius_km: 20\nlookback_hours: 24\nnotify_email: a@b.com\n")
+        result = check_spills.load_config(str(f))
+        assert result["postcode"] == "GL5 1HE"
+        assert result["radius_km"] == 20
+        assert result["lookback_hours"] == 24
+        assert result["notify_email"] == "a@b.com"
+
+
+class TestValidateLookbackHours:
+    def test_standard_values_produce_no_warning(self, capsys):
+        for hours in (6, 12, 24):
+            check_spills.validate_lookback_hours(hours)
+        assert capsys.readouterr().err == ""
+
+    def test_nonstandard_value_warns_to_stderr(self, capsys):
+        check_spills.validate_lookback_hours(7)
+        err = capsys.readouterr().err
+        assert "WARNING" in err
+        assert "7" in err

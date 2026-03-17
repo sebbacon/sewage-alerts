@@ -32,5 +32,21 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
+def load_config(path: str = "config.yml") -> dict:
+    """Load configuration from a YAML file."""
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def validate_lookback_hours(hours: int) -> None:
+    """Warn to stderr if lookback_hours is not a recognised standard value."""
+    if hours not in STANDARD_LOOKBACK_HOURS:
+        print(
+            f"WARNING: lookback_hours={hours} is non-standard (expected 6, 12, or 24). "
+            "Ensure your cron schedule matches.",
+            file=sys.stderr,
+        )
+
+
 if __name__ == "__main__":
     pass
