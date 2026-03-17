@@ -42,6 +42,8 @@ https://services1.arcgis.com/NO7lTIlnxRMMG9Gw/arcgis/rest/services/
 
 An alert is sent when one or more overflow events have **started** (based on `LatestEventStart`) within the configured `lookback_hours` window AND within `radius_km` of the configured postcode. Events that started before the lookback window are ignored, avoiding repeat alerts for long-running spills.
 
+**Assumption:** `LatestEventStart` represents when the event began and is not updated mid-event. If Severn Trent's system were to refresh this field during an ongoing spill, an active spill could re-trigger on consecutive runs — this is considered acceptable behaviour if it occurs, as the alert remains factually correct.
+
 ---
 
 ## Repository Structure
@@ -58,6 +60,7 @@ sewage_alerts/
 ├── check_spills.py               # Main script
 ├── setup.py                      # Interactive setup script
 ├── config.yml                    # User-editable configuration
+├── requirements.txt              # PyYAML pinned
 └── README.md                     # Setup instructions
 ```
 
@@ -72,7 +75,7 @@ lookback_hours: 24
 notify_email: "you@gmail.com"
 ```
 
-The `lookback_hours` value must match the cron schedule interval. The `setup.py` script writes both together, ensuring consistency.
+The `lookback_hours` value must match the cron schedule interval. The `setup.py` script writes both together, ensuring consistency at setup time. If a user later edits either file manually, `check_spills.py` will log a warning to stderr if `lookback_hours` does not correspond to a recognised standard interval (6, 12, or 24 hours), but will not abort.
 
 ---
 
@@ -89,13 +92,13 @@ The `lookback_hours` value must match the cron schedule interval. The `setup.py`
    - outFields=*&f=geojson
 4. If 0 results → exit 0 (no email sent)
 5. If results found:
-   - Compute haversine distance from home for each result
+   - Compute haversine distance from home for each result (for display only — ArcGIS spatial filter already guarantees all results are within radius_km)
    - Send HTML email via Gmail SMTP (smtplib)
 ```
 
-**Dependencies:** Python stdlib only (`urllib`, `smtplib`, `json`, `math`, `yaml` via `PyYAML`). No `pip install` step beyond PyYAML.
+**Dependencies:** Python stdlib (`urllib`, `smtplib`, `json`, `math`) plus `PyYAML` (pinned in `requirements.txt`).
 
-**Email format:** Multipart MIME (text + HTML). HTML body contains a table with columns: Site ID, Watercourse, Distance from home (km), Event started (local time).
+**Email format:** Multipart MIME (text + HTML). HTML body contains a table with columns: Site ID, Watercourse, Distance from home (km), Event started (local time), Event ended (local time or "Ongoing"). `Status` field is intentionally excluded — its integer codes are undocumented.
 
 **Credentials:** Read from environment variables `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD`, set as GitHub Actions secrets.
 
@@ -117,7 +120,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install pyyaml
+      - run: pip install -r requirements.txt
       - run: python check_spills.py
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
@@ -164,12 +167,15 @@ Designed for non-technical users. Prerequisites: Python 3 installed.
 2. Install GitHub CLI: follow instructions at cli.github.com
 3. Run: `gh auth login`
 4. Run: `gh repo fork <this-repo> --clone && cd sewage-alerts`
-5. Run: `python setup.py` and follow the prompts
-6. Create a Gmail App Password:
+5. **Enable GitHub Actions on your fork:** go to your forked repo on github.com → Actions tab → click "I understand my workflows, go ahead and enable them"
+6. Run: `python setup.py` and follow the prompts
+7. Create a Gmail App Password:
    - Google Account → Security → 2-Step Verification → App Passwords
    - Name it "Sewage Alerts", copy the generated password
-7. Paste and run the commands printed by `setup.py`
-8. Done — the action will run on schedule and email you when spills are found nearby
+8. Paste and run the commands printed by `setup.py`
+9. Done — the action will run on schedule and email you when spills are found nearby
+
+**Geographic note:** This tool uses Severn Trent Water's dataset and only covers their service area (broadly the Midlands and parts of the East of England). If your postcode is outside this area, the script will run without error but will never find any events. Check the [Severn Trent service area map](https://www.stwater.co.uk/) if unsure.
 
 ---
 
