@@ -1,0 +1,4 @@
+postcode: "GL5 1HE"
+radius_km: 20
+lookback_hours: 24
+notify_email: "you@gmail.com"
