@@ -119,3 +119,34 @@ class TestQuerySpills:
         assert "24" in url
         assert "20000" in url
         assert "esriSRUnit_Meter" in url
+
+
+class TestFormatSpillRow:
+    def test_all_fields_present(self):
+        row = check_spills.format_spill_row(SAMPLE_FEATURE, 51.745, -2.216)
+        assert row["site_id"] == "SVT00291"
+        assert row["watercourse"] == "RIVER SEVERN"
+        assert isinstance(row["distance_km"], float)
+        assert row["distance_km"] < 20
+        assert "UTC" in row["started"]
+        assert "UTC" in row["ended"]
+
+    def test_ongoing_when_end_is_none(self):
+        feature = {
+            "properties": {
+                **SAMPLE_FEATURE["properties"],
+                "LatestEventEnd": None,
+            }
+        }
+        row = check_spills.format_spill_row(feature, 51.745, -2.216)
+        assert row["ended"] == "Ongoing"
+
+    def test_ongoing_when_end_is_zero(self):
+        feature = {
+            "properties": {
+                **SAMPLE_FEATURE["properties"],
+                "LatestEventEnd": 0,
+            }
+        }
+        row = check_spills.format_spill_row(feature, 51.745, -2.216)
+        assert row["ended"] == "Ongoing"

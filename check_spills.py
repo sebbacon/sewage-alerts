@@ -74,6 +74,27 @@ def get_postcode_coords(postcode: str) -> tuple[float, float]:
         sys.exit(1)
 
 
+def _fmt_epoch_ms(epoch_ms) -> str:
+    """Format an epoch-millisecond timestamp as a UTC string, or 'Ongoing' if falsy."""
+    if not epoch_ms:
+        return "Ongoing"
+    dt = datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc)
+    return dt.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def format_spill_row(feature: dict, home_lat: float, home_lon: float) -> dict:
+    """Return a display-ready dict for one spill feature."""
+    props = feature["properties"]
+    distance = haversine_km(home_lat, home_lon, props["Latitude"], props["Longitude"])
+    return {
+        "site_id": props["Id"],
+        "watercourse": props["ReceivingWaterCourse"],
+        "distance_km": round(distance, 1),
+        "started": _fmt_epoch_ms(props.get("LatestEventStart")),
+        "ended": _fmt_epoch_ms(props.get("LatestEventEnd")),
+    }
+
+
 def validate_lookback_hours(hours: int) -> None:
     """Warn to stderr if lookback_hours is not a recognised standard value."""
     if hours not in STANDARD_LOOKBACK_HOURS:
