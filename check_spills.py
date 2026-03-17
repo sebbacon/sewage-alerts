@@ -38,6 +38,19 @@ def load_config(path: str = "config.yml") -> dict:
         return yaml.safe_load(f)
 
 
+def get_postcode_coords(postcode: str) -> tuple[float, float]:
+    """Return (latitude, longitude) for a UK postcode via postcodes.io."""
+    url = POSTCODES_URL.format(urllib.parse.quote(postcode))
+    try:
+        with urllib.request.urlopen(url) as resp:
+            data = json.loads(resp.read())
+        result = data["result"]
+        return result["latitude"], result["longitude"]
+    except Exception as exc:
+        print(f"ERROR: Could not look up postcode '{postcode}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
 def validate_lookback_hours(hours: int) -> None:
     """Warn to stderr if lookback_hours is not a recognised standard value."""
     if hours not in STANDARD_LOOKBACK_HOURS:

@@ -40,3 +40,29 @@ class TestValidateLookbackHours:
         err = capsys.readouterr().err
         assert "WARNING" in err
         assert "7" in err
+
+
+import json
+from unittest.mock import MagicMock, patch
+
+
+def _mock_urlopen(response_data: dict) -> MagicMock:
+    """Return a context-manager mock for urllib.request.urlopen."""
+    mock_cm = MagicMock()
+    mock_cm.__enter__.return_value.read.return_value = json.dumps(response_data).encode()
+    mock_cm.__exit__.return_value = False
+    return mock_cm
+
+
+class TestGetPostcodeCoords:
+    def test_returns_lat_lon(self):
+        payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
+        with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
+            lat, lon = check_spills.get_postcode_coords("GL5 1HE")
+        assert lat == pytest.approx(51.745)
+        assert lon == pytest.approx(-2.216)
+
+    def test_exits_on_network_error(self):
+        with patch("urllib.request.urlopen", side_effect=Exception("network error")):
+            with pytest.raises(SystemExit):
+                check_spills.get_postcode_coords("GL5 1HE")
