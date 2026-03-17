@@ -150,3 +150,44 @@ class TestFormatSpillRow:
         }
         row = check_spills.format_spill_row(feature, 51.745, -2.216)
         assert row["ended"] == "Ongoing"
+
+
+SAMPLE_ROWS = [
+    {
+        "site_id": "SVT001",
+        "watercourse": "RIVER TEST",
+        "distance_km": 5.3,
+        "started": "2026-03-17 10:00 UTC",
+        "ended": "Ongoing",
+    }
+]
+
+
+class TestBuildHtmlEmail:
+    def test_subject_contains_count_and_postcode(self):
+        subject, _ = check_spills.build_html_email(SAMPLE_ROWS, "GL5 1HE", 20)
+        assert "1" in subject
+        assert "GL5 1HE" in subject
+
+    def test_html_contains_all_row_fields(self):
+        _, html = check_spills.build_html_email(SAMPLE_ROWS, "GL5 1HE", 20)
+        assert "SVT001" in html
+        assert "RIVER TEST" in html
+        assert "5.3" in html
+        assert "2026-03-17 10:00 UTC" in html
+        assert "Ongoing" in html
+
+    def test_html_is_valid_table(self):
+        _, html = check_spills.build_html_email(SAMPLE_ROWS, "GL5 1HE", 20)
+        assert "<table" in html
+        assert "<tr>" in html or "<tr " in html
+        assert "<th>" in html or "<th " in html
+
+
+class TestBuildTextEmail:
+    def test_contains_all_row_fields(self):
+        text = check_spills.build_text_email(SAMPLE_ROWS, "GL5 1HE", 20)
+        assert "SVT001" in text
+        assert "RIVER TEST" in text
+        assert "Ongoing" in text
+        assert "GL5 1HE" in text

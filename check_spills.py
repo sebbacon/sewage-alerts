@@ -32,6 +32,46 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
+def build_html_email(rows: list, postcode: str, radius_km: float) -> tuple[str, str]:
+    """Return (subject, html_body) for the spill alert email."""
+    count = len(rows)
+    subject = f"Sewage alert: {count} spill(s) within {radius_km}km of {postcode}"
+    rows_html = "\n".join(
+        f"<tr><td>{r['site_id']}</td><td>{r['watercourse']}</td>"
+        f"<td>{r['distance_km']}</td><td>{r['started']}</td><td>{r['ended']}</td></tr>"
+        for r in rows
+    )
+    html = f"""<html><body>
+<p>{count} sewage overflow event(s) started near {postcode} in the last check window.</p>
+<table border="1" cellpadding="4" cellspacing="0">
+  <thead>
+    <tr>
+      <th>Site ID</th><th>Watercourse</th><th>Distance (km)</th>
+      <th>Event started</th><th>Event ended</th>
+    </tr>
+  </thead>
+  <tbody>
+    {rows_html}
+  </tbody>
+</table>
+<p><small>Source: Severn Trent Water Storm Overflow Activity</small></p>
+</body></html>"""
+    return subject, html
+
+
+def build_text_email(rows: list, postcode: str, radius_km: float) -> str:
+    """Return plain-text body for the spill alert email."""
+    count = len(rows)
+    lines = [f"{count} sewage overflow event(s) near {postcode} (within {radius_km}km):\n"]
+    for r in rows:
+        lines.append(
+            f"- {r['site_id']} | {r['watercourse']} | {r['distance_km']}km "
+            f"| Started: {r['started']} | Ended: {r['ended']}"
+        )
+    lines.append("\nSource: Severn Trent Water Storm Overflow Activity")
+    return "\n".join(lines)
+
+
 def load_config(path: str = "config.yml") -> dict:
     """Load configuration from a YAML file."""
     with open(path) as f:
