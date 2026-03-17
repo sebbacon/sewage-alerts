@@ -58,7 +58,7 @@ sewage_alerts/
 │       └── specs/
 │           └── 2026-03-17-sewage-alerts-design.md
 ├── check_spills.py               # Main script
-├── setup.py                      # Interactive setup script
+├── configure.py                      # Interactive setup script
 ├── config.yml                    # User-editable configuration
 ├── requirements.txt              # PyYAML pinned
 └── README.md                     # Setup instructions
@@ -75,7 +75,7 @@ lookback_hours: 24
 notify_email: "you@gmail.com"
 ```
 
-The `lookback_hours` value must match the cron schedule interval. The `setup.py` script writes both together, ensuring consistency at setup time. If a user later edits either file manually, `check_spills.py` will log a warning to stderr if `lookback_hours` does not correspond to a recognised standard interval (6, 12, or 24 hours), but will not abort.
+The `lookback_hours` value must match the cron schedule interval. The `configure.py` script writes both together, ensuring consistency at setup time. If a user later edits either file manually, `check_spills.py` will log a warning to stderr if `lookback_hours` is not one of the recognised standard values (6, 12, or 24). It does **not** attempt to parse the cron expression and compare — a user who sets `lookback_hours: 12` with a daily cron will receive no warning. This mismatch is an accepted limitation noted under Out of Scope.
 
 ---
 
@@ -109,7 +109,7 @@ The `lookback_hours` value must match the cron schedule interval. The `setup.py`
 ```yaml
 on:
   schedule:
-    - cron: '0 7 * * *'    # daily at 07:00 UTC — kept in sync with lookback_hours by setup.py
+    - cron: '0 7 * * *'    # daily at 07:00 UTC — kept in sync with lookback_hours by configure.py
   workflow_dispatch:         # allows manual trigger for testing
 
 jobs:
@@ -129,7 +129,7 @@ jobs:
 
 ---
 
-## Setup Script (`setup.py`)
+## Setup Script (`configure.py`)
 
 Interactive script run once by the user after forking. Prompts for:
 
@@ -168,11 +168,11 @@ Designed for non-technical users. Prerequisites: Python 3 installed.
 3. Run: `gh auth login`
 4. Run: `gh repo fork <this-repo> --clone && cd sewage-alerts`
 5. **Enable GitHub Actions on your fork:** go to your forked repo on github.com → Actions tab → click "I understand my workflows, go ahead and enable them"
-6. Run: `python setup.py` and follow the prompts
-7. Create a Gmail App Password:
+6. Create a Gmail App Password (needed in the next step):
    - Google Account → Security → 2-Step Verification → App Passwords
    - Name it "Sewage Alerts", copy the generated password
-8. Paste and run the commands printed by `setup.py`
+7. Run: `python configure.py` and follow the prompts
+8. Paste and run the commands printed by `configure.py` (these will ask you to enter the App Password you just copied)
 9. Done — the action will run on schedule and email you when spills are found nearby
 
 **Geographic note:** This tool uses Severn Trent Water's dataset and only covers their service area (broadly the Midlands and parts of the East of England). If your postcode is outside this area, the script will run without error but will never find any events. Check the [Severn Trent service area map](https://www.stwater.co.uk/) if unsure.
@@ -195,5 +195,6 @@ Workflow failures generate a GitHub notification email to the repo owner (separa
 - Support for water companies other than Severn Trent (dataset is Severn Trent specific)
 - Historical reporting or data persistence
 - Deduplication across runs (by design — lookback window handles this)
+- Detection of cron-vs-lookback_hours mismatch after initial setup (the warning in check_spills.py only validates that lookback_hours is a standard value, not that it matches the cron schedule)
 - Mobile push notifications
 - Multiple recipient addresses
