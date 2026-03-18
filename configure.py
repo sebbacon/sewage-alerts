@@ -119,7 +119,7 @@ Then push and test:
 
   git add {CONFIG_PATH} {WORKFLOW_PATH}
   git commit -m "configure sewage alerts"
-  git push
+  git push -u origin main
   gh workflow run check_spills.yml
 """)
 
