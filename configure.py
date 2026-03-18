@@ -82,7 +82,14 @@ def main() -> None:
 
     if choice == 4:
         cron_expr = input("Cron expression (e.g. 0 */8 * * *): ").strip()
-        lookback_hours = int(input("Corresponding lookback_hours: ").strip())
+        if not cron_expr:
+            print("ERROR: Cron expression cannot be empty.", file=sys.stderr)
+            sys.exit(1)
+        try:
+            lookback_hours = int(input("Corresponding lookback_hours: ").strip())
+        except ValueError:
+            print("ERROR: lookback_hours must be an integer.", file=sys.stderr)
+            sys.exit(1)
     else:
         hour = 7
         if choice == 3:

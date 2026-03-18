@@ -1,6 +1,7 @@
 import json
 
 import pytest
+import yaml
 from unittest.mock import MagicMock, patch
 
 import check_spills
@@ -234,8 +235,7 @@ class TestMain:
 
     def test_no_email_when_no_spills(self, tmp_path):
         config_file = tmp_path / "config.yml"
-        import yaml as _yaml
-        config_file.write_text(_yaml.dump(self.BASE_CONFIG))
+        config_file.write_text(yaml.dump(self.BASE_CONFIG))
 
         empty_features = {"type": "FeatureCollection", "features": []}
         postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
@@ -254,8 +254,7 @@ class TestMain:
 
     def test_sends_email_when_spills_found(self, tmp_path):
         config_file = tmp_path / "config.yml"
-        import yaml as _yaml
-        config_file.write_text(_yaml.dump(self.BASE_CONFIG))
+        config_file.write_text(yaml.dump(self.BASE_CONFIG))
 
         features_payload = {"type": "FeatureCollection", "features": [SAMPLE_FEATURE]}
         postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
