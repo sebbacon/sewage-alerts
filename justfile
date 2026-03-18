@@ -5,8 +5,8 @@ set dotenv-load
 
 # Create venv and install dev dependencies (run once)
 devsetup:
-    uv venv
-    uv pip install -r requirements-dev.txt
+    [ -d .venv ] || uv venv
+    uv pip install -r requirements-dev.txt -q
 
 # Run the spill check (mirrors "Check for nearby spills" step in check_spills.yml)
 run: devsetup
