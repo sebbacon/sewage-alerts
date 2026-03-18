@@ -1,5 +1,7 @@
 # Replicates the GitHub Actions workflow locally.
-# Requires: just, python3, and GMAIL_ADDRESS + GMAIL_APP_PASSWORD in env (for `run`).
+# Copy .env.example to .env and fill in your credentials for `just run`.
+
+set dotenv-load
 
 # Install runtime deps (mirrors "Install dependencies" step in check_spills.yml)
 install:
