@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check for sewage overflow events near a configured postcode and send email alerts."""
 
+import argparse
 import json
 import math
 import os
@@ -11,6 +12,15 @@ import urllib.request
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+
+_verbose = False
+
+
+def log(msg: str) -> None:
+    """Print a progress message when verbose mode is on."""
+    if _verbose:
+        print(f"  {msg}")
 
 
 ARCGIS_URL = (
@@ -178,19 +188,27 @@ def send_email(
 
 
 def main(config_path: str = "config.yml") -> None:
+    log("Reading credentials from environment")
     from_addr = os.environ["GMAIL_ADDRESS"]
     password = os.environ["GMAIL_APP_PASSWORD"]
 
+    log(f"Loading config from {config_path}")
     config = load_config(config_path)
     postcode = config["postcode"]
     radius_km = config["radius_km"]
     lookback_hours = config["lookback_hours"]
     notify_email = config["notify_email"]
+    log(f"Config: postcode={postcode}, radius={radius_km}km, lookback={lookback_hours}h, notify={notify_email}")
 
     validate_lookback_hours(lookback_hours)
 
+    log(f"Looking up coordinates for {postcode}")
     home_lat, home_lon = get_postcode_coords(postcode)
+    log(f"Coordinates: lat={home_lat}, lon={home_lon}")
+
+    log(f"Querying Severn Trent API for spills in last {lookback_hours}h within {radius_km}km")
     features = query_spills(home_lat, home_lon, radius_km, lookback_hours)
+    log(f"Found {len(features)} spill(s)")
 
     if not features:
         print(f"No spills found within {radius_km}km of {postcode} in the last {lookback_hours}h.")
@@ -200,9 +218,18 @@ def main(config_path: str = "config.yml") -> None:
     subject, html = build_html_email(rows, postcode, radius_km)
     text = build_text_email(rows, postcode, radius_km)
 
+    log(f"Sending email to {notify_email} via {from_addr}")
     send_email(subject, html, text, notify_email, from_addr, password)
     print(f"Alert sent: {subject}")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Check for nearby sewage spills and send alerts.")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print progress to stdout")
+    parser.add_argument("--config", default="config.yml", help="Path to config file")
+    args = parser.parse_args()
+
+    if args.verbose:
+        _verbose = True
+
+    main(config_path=args.config)

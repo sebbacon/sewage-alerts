@@ -10,7 +10,7 @@ devsetup:
 
 # Run the spill check (mirrors "Check for nearby spills" step in check_spills.yml)
 run: devsetup
-    uv run python check_spills.py
+    uv run python check_spills.py --verbose
 
 # Run tests
 test: devsetup
