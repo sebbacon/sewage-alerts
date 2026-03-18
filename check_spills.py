@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-import yaml
 
 ARCGIS_URL = (
     "https://services1.arcgis.com/NO7lTIlnxRMMG9Gw/arcgis/rest/services/"
@@ -34,8 +33,17 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def load_config(path: str = "config.yml") -> dict:
     """Load configuration from a YAML file."""
+    config: dict = {}
     with open(path) as f:
-        return yaml.safe_load(f)
+        for line in f:
+            line = line.strip()
+            if ":" in line and not line.startswith("#"):
+                key, _, value = line.partition(":")
+                config[key.strip()] = value.strip().strip('"').strip("'")
+    for int_key in ("radius_km", "lookback_hours"):
+        if int_key in config:
+            config[int_key] = int(config[int_key])
+    return config
 
 
 def validate_lookback_hours(hours: int) -> None:
