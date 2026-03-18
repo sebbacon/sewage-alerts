@@ -39,13 +39,14 @@ Go to your forked repository on github.com → click the **Actions** tab → cli
 
 ### 6. Create a Gmail App Password
 
-You'll need this in the next step.
+You'll need this in the next step. App Passwords require 2-Step Verification to be enabled on your Google account first.
 
-1. Go to your [Google Account](https://myaccount.google.com) → **Security**
-2. Under "How you sign in to Google", click **2-Step Verification** (enable it if not already on)
-3. Scroll to the bottom and click **App passwords**
-4. Name it "Sewage Alerts" and click **Create**
-5. Copy the 16-character password shown — you'll need it shortly
+1. Go to [myaccount.google.com/security](https://myaccount.google.com/security) and enable **2-Step Verification** if it isn't already on
+2. Then go directly to [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+3. Name it "Sewage Alerts" and click **Create**
+4. Copy the 16-character password shown — you'll need it shortly
+
+> **Note:** If you don't see the App passwords page, your Google account may be managed by an organisation (e.g. a work or school account) that disables this feature. You'll need to use a personal Gmail account instead.
 
 ### 7. Run the setup script
 
