@@ -3,7 +3,6 @@
 
 import re
 import sys
-import yaml
 
 WORKFLOW_PATH = ".github/workflows/check_spills.yml"
 CONFIG_PATH = "config.yml"
@@ -35,6 +34,21 @@ def patch_workflow_cron(cron_expr: str, workflow_path: str = WORKFLOW_PATH) -> N
         f.write(new_content)
 
 
+def read_config(path: str = CONFIG_PATH) -> dict:
+    """Read configuration from a YAML file without external dependencies."""
+    config: dict = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if ":" in line and not line.startswith("#"):
+                    key, _, value = line.partition(":")
+                    config[key.strip()] = value.strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    return config
+
+
 def write_config(
     postcode: str,
     radius_km: int,
@@ -43,14 +57,11 @@ def write_config(
     path: str = CONFIG_PATH,
 ) -> None:
     """Write configuration to a YAML file."""
-    config = {
-        "postcode": postcode,
-        "radius_km": radius_km,
-        "lookback_hours": lookback_hours,
-        "notify_email": notify_email,
-    }
     with open(path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False)
+        f.write(f'postcode: "{postcode}"\n')
+        f.write(f"radius_km: {radius_km}\n")
+        f.write(f"lookback_hours: {lookback_hours}\n")
+        f.write(f'notify_email: "{notify_email}"\n')
 
 
 def _prompt(message: str, default: str = "") -> str:
@@ -62,11 +73,7 @@ def _prompt(message: str, default: str = "") -> str:
 def main() -> None:
     print("Welcome to Sewage Alerts setup!\n")
 
-    try:
-        with open(CONFIG_PATH) as f:
-            existing = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        existing = {}
+    existing = read_config()
 
     postcode = _prompt("Postcode", existing.get("postcode", "GL5 1HE"))
     notify_email = _prompt("Notification email", existing.get("notify_email", ""))
