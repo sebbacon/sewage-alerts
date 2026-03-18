@@ -179,9 +179,13 @@ def send_email(
     msg.attach(MIMEText(text, "plain"))
     msg.attach(MIMEText(html, "html"))
     try:
+        log("Connecting to smtp.gmail.com:465")
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            log(f"Logging in as {from_addr}")
             server.login(from_addr, password)
+            log("Login successful, sending message")
             server.sendmail(from_addr, to_addr, msg.as_string())
+            log("sendmail() returned without error")
     except Exception as exc:
         print(f"ERROR: Could not send email: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -215,11 +219,15 @@ def main(config_path: str = "config.yml") -> None:
         return
 
     rows = [format_spill_row(f, home_lat, home_lon) for f in features]
+    for r in rows:
+        log(f"  Spill: {r['site_id']} | {r['watercourse']} | {r['distance_km']}km | {r['started']} → {r['ended']}")
     subject, html = build_html_email(rows, postcode, radius_km)
     text = build_text_email(rows, postcode, radius_km)
 
-    log(f"Sending email to {notify_email} via {from_addr}")
+    log(f"Subject: {subject}")
+    log(f"Sending from {from_addr} to {notify_email} via smtp.gmail.com:465")
     send_email(subject, html, text, notify_email, from_addr, password)
+    log("SMTP connection closed cleanly")
     print(f"Alert sent: {subject}")
 
 
