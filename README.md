@@ -30,7 +30,7 @@ Follow the prompts. Choose "GitHub.com" and "HTTPS" when asked.
 ### 4. Fork and clone this repository
 
 ```bash
-gh repo fork <REPO_URL> --clone && cd sewage-alerts
+gh repo fork sebbacon/sewage-alerts --clone && cd sewage-alerts
 ```
 
 ### 5. Enable GitHub Actions on your fork
