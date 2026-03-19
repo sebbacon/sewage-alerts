@@ -37,19 +37,60 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * R * math.asin(math.sqrt(a))
 
 
+def _set_recipient_field(d: dict, key: str, val: str) -> None:
+    """Set a recipient dict field, casting radius_km to int."""
+    if key == "radius_km":
+        d[key] = int(val)
+    else:
+        d[key] = val
+
+
 def load_config(path: str = "config.yml") -> dict:
-    """Load configuration from a YAML file."""
-    config: dict = {}
+    """Load configuration from a YAML file, returning {lookback_hours, recipients: [...]}."""
+    top: dict = {}
+    recipients: list = []
+    in_recipients = False
+    current: dict | None = None
+
     with open(path) as f:
         for line in f:
-            line = line.strip()
-            if ":" in line and not line.startswith("#"):
-                key, _, value = line.partition(":")
-                config[key.strip()] = value.strip().strip('"').strip("'")
-    for int_key in ("radius_km", "lookback_hours"):
-        if int_key in config:
-            config[int_key] = int(config[int_key])
-    return config
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped == "recipients:":
+                in_recipients = True
+                continue
+            if in_recipients:
+                if stripped.startswith("- "):
+                    if current is not None:
+                        recipients.append(current)
+                    current = {}
+                    key, _, val = stripped[2:].partition(":")
+                    _set_recipient_field(current, key.strip(), val.strip().strip('"'))
+                elif current is not None and ":" in stripped:
+                    key, _, val = stripped.partition(":")
+                    _set_recipient_field(current, key.strip(), val.strip().strip('"'))
+            else:
+                if ":" in stripped:
+                    key, _, val = stripped.partition(":")
+                    top[key.strip()] = val.strip().strip('"').strip("'")
+
+    if current is not None:
+        recipients.append(current)
+
+    if "lookback_hours" in top:
+        top["lookback_hours"] = int(top["lookback_hours"])
+
+    # Backwards compat: old flat format
+    if not recipients and "postcode" in top:
+        recipients = [{
+            "postcode": top.pop("postcode"),
+            "radius_km": int(top.pop("radius_km")),
+            "notify_email": top.pop("notify_email"),
+        }]
+
+    top["recipients"] = recipients
+    return top
 
 
 def load_companies(path: str = "companies.yml") -> list[dict]:

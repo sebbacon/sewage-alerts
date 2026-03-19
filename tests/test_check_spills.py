@@ -24,14 +24,59 @@ class TestHaversineKm:
 
 
 class TestLoadConfig:
-    def test_loads_all_fields(self, tmp_path):
+    def test_loads_multi_recipient_format(self, tmp_path):
         f = tmp_path / "config.yml"
-        f.write_text("postcode: GL5 1HE\nradius_km: 20\nlookback_hours: 24\nnotify_email: a@b.com\n")
+        f.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            '  - postcode: "GL5 1HE"\n'
+            "    radius_km: 45\n"
+            '    notify_email: "a@b.com"\n'
+            '  - postcode: "SW1A 1AA"\n'
+            "    radius_km: 10\n"
+            '    notify_email: "c@d.com"\n'
+        )
         result = check_spills.load_config(str(f))
-        assert result["postcode"] == "GL5 1HE"
-        assert result["radius_km"] == 20
         assert result["lookback_hours"] == 24
-        assert result["notify_email"] == "a@b.com"
+        assert len(result["recipients"]) == 2
+        assert result["recipients"][0] == {
+            "postcode": "GL5 1HE", "radius_km": 45, "notify_email": "a@b.com"
+        }
+        assert result["recipients"][1] == {
+            "postcode": "SW1A 1AA", "radius_km": 10, "notify_email": "c@d.com"
+        }
+
+    def test_key_order_independent(self, tmp_path):
+        # yaml.dump sorts alphabetically: notify_email before postcode before radius_km
+        f = tmp_path / "config.yml"
+        f.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            "- notify_email: a@b.com\n"
+            "  postcode: GL5 1HE\n"
+            "  radius_km: 45\n"
+        )
+        result = check_spills.load_config(str(f))
+        assert result["recipients"][0]["postcode"] == "GL5 1HE"
+        assert result["recipients"][0]["radius_km"] == 45
+        assert result["recipients"][0]["notify_email"] == "a@b.com"
+
+
+class TestLoadConfigBackwardsCompat:
+    def test_flat_format_becomes_single_recipient(self, tmp_path):
+        f = tmp_path / "config.yml"
+        f.write_text(
+            "postcode: GL5 1HE\n"
+            "radius_km: 20\n"
+            "lookback_hours: 24\n"
+            "notify_email: a@b.com\n"
+        )
+        result = check_spills.load_config(str(f))
+        assert result["lookback_hours"] == 24
+        assert len(result["recipients"]) == 1
+        assert result["recipients"][0] == {
+            "postcode": "GL5 1HE", "radius_km": 20, "notify_email": "a@b.com"
+        }
 
 
 class TestLoadCompanies:
