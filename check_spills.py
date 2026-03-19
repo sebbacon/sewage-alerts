@@ -125,16 +125,21 @@ def _fmt_epoch_ms(epoch_ms) -> str:
     return dt.strftime("%Y-%m-%d %H:%M UTC")
 
 
-def format_spill_row(feature: dict, home_lat: float, home_lon: float) -> dict:
+def format_spill_row(feature: dict, home_lat: float, home_lon: float, company: str) -> dict:
     """Return a display-ready dict for one spill feature."""
     props = feature["properties"]
-    distance = haversine_km(home_lat, home_lon, props["Latitude"], props["Longitude"])
+    lon, lat = feature["geometry"]["coordinates"]
+    distance = haversine_km(home_lat, home_lon, lat, lon)
+    watercourse = props.get("ReceivingWaterCourse") or props.get("receivingWaterCourse", "")
+    start = props.get("LatestEventStart") or props.get("latestEventStart")
+    end = props.get("LatestEventEnd") or props.get("latestEventEnd")
     return {
         "site_id": props["Id"],
-        "watercourse": props["ReceivingWaterCourse"],
+        "company": company,
+        "watercourse": watercourse,
         "distance_km": round(distance, 1),
-        "started": _fmt_epoch_ms(props.get("LatestEventStart")),
-        "ended": _fmt_epoch_ms(props.get("LatestEventEnd")),
+        "started": _fmt_epoch_ms(start),
+        "ended": _fmt_epoch_ms(end),
     }
 
 

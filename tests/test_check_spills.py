@@ -119,6 +119,18 @@ SAMPLE_FEATURE = {
     },
 }
 
+SAMPLE_FEATURE_SOUTH_WEST = {
+    "type": "Feature",
+    "geometry": {"type": "Point", "coordinates": [-4.826, 50.514]},
+    "properties": {
+        "Id": "SBB00407",
+        "receivingWaterCourse": "CAMEL ESTUARY",
+        # South West Water uses camelCase; coordinates come from geometry, not properties
+        "latestEventStart": 1773224866000,
+        "latestEventEnd": 1773224876000,
+    },
+}
+
 
 class TestQuerySpills:
     def test_returns_features_list(self):
@@ -160,8 +172,9 @@ class TestQuerySpills:
 
 class TestFormatSpillRow:
     def test_all_fields_present(self):
-        row = check_spills.format_spill_row(SAMPLE_FEATURE, 51.745, -2.216)
+        row = check_spills.format_spill_row(SAMPLE_FEATURE, 51.745, -2.216, "Severn Trent Water")
         assert row["site_id"] == "SVT00291"
+        assert row["company"] == "Severn Trent Water"
         assert row["watercourse"] == "RIVER SEVERN"
         assert isinstance(row["distance_km"], float)
         assert row["distance_km"] < 20
@@ -170,28 +183,39 @@ class TestFormatSpillRow:
 
     def test_ongoing_when_end_is_none(self):
         feature = {
+            "geometry": SAMPLE_FEATURE["geometry"],
             "properties": {
                 **SAMPLE_FEATURE["properties"],
                 "LatestEventEnd": None,
-            }
+            },
         }
-        row = check_spills.format_spill_row(feature, 51.745, -2.216)
+        row = check_spills.format_spill_row(feature, 51.745, -2.216, "Test Co")
         assert row["ended"] == "Ongoing"
 
     def test_ongoing_when_end_is_zero(self):
         feature = {
+            "geometry": SAMPLE_FEATURE["geometry"],
             "properties": {
                 **SAMPLE_FEATURE["properties"],
                 "LatestEventEnd": 0,
-            }
+            },
         }
-        row = check_spills.format_spill_row(feature, 51.745, -2.216)
+        row = check_spills.format_spill_row(feature, 51.745, -2.216, "Test Co")
         assert row["ended"] == "Ongoing"
+
+    def test_camelcase_fields_normalised(self):
+        row = check_spills.format_spill_row(SAMPLE_FEATURE_SOUTH_WEST, 51.745, -2.216, "South West Water")
+        assert row["site_id"] == "SBB00407"
+        assert row["company"] == "South West Water"
+        assert row["watercourse"] == "CAMEL ESTUARY"
+        assert "UTC" in row["started"]
+        assert "UTC" in row["ended"]
 
 
 SAMPLE_ROWS = [
     {
         "site_id": "SVT001",
+        "company": "Test Water Co",
         "watercourse": "RIVER TEST",
         "distance_km": 5.3,
         "started": "2026-03-17 10:00 UTC",
