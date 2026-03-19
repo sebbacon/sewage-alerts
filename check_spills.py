@@ -227,7 +227,7 @@ def send_email(
         sys.exit(1)
 
 
-def main(config_path: str = "config.yml") -> None:
+def main(config_path: str = "config.yml", companies_path: str = "companies.yml") -> None:
     log("Reading credentials from environment")
     from_addr = os.environ["GMAIL_ADDRESS"]
     password = os.environ["GMAIL_APP_PASSWORD"]
@@ -246,25 +246,51 @@ def main(config_path: str = "config.yml") -> None:
     home_lat, home_lon = get_postcode_coords(postcode)
     log(f"Coordinates: lat={home_lat}, lon={home_lon}")
 
-    log(f"Querying Severn Trent API for spills in last {lookback_hours}h within {radius_km}km")
-    features = query_spills(home_lat, home_lon, radius_km, lookback_hours)
-    log(f"Found {len(features)} spill(s)")
+    companies = load_companies(companies_path)
+    log(f"Querying {len(companies)} water companies")
 
-    if not features:
-        print(f"No spills found within {radius_km}km of {postcode} in the last {lookback_hours}h.")
-        return
+    rows = []
+    failures = []
+    for company in companies:
+        log(f"Querying {company['name']} for spills in last {lookback_hours}h within {radius_km}km")
+        try:
+            features = query_spills(home_lat, home_lon, radius_km, lookback_hours, company["query_url"])
+            log(f"  {company['name']}: {len(features)} spill(s)")
+            rows += [format_spill_row(f, home_lat, home_lon, company["name"]) for f in features]
+        except Exception as exc:
+            failures.append((company["name"], str(exc)))
+            print(f"WARNING: {company['name']} query failed: {exc}", file=sys.stderr)
 
-    rows = [format_spill_row(f, home_lat, home_lon) for f in features]
     for r in rows:
-        log(f"  Spill: {r['site_id']} | {r['watercourse']} | {r['distance_km']}km | {r['started']} → {r['ended']}")
-    subject, html = build_html_email(rows, postcode, radius_km)
-    text = build_text_email(rows, postcode, radius_km)
+        log(f"  Spill: {r['company']} | {r['site_id']} | {r['watercourse']} | {r['distance_km']}km | {r['started']} → {r['ended']}")
 
-    log(f"Subject: {subject}")
-    log(f"Sending from {from_addr} to {notify_email} via smtp.gmail.com:465")
-    send_email(subject, html, text, notify_email, from_addr, password)
-    log("SMTP connection closed cleanly")
-    print(f"Alert sent: {subject}")
+    if rows:
+        subject, html = build_html_email(rows, postcode, radius_km, failures=failures or None)
+        text = build_text_email(rows, postcode, radius_km, failures=failures or None)
+        log(f"Subject: {subject}")
+        log(f"Sending from {from_addr} to {notify_email} via smtp.gmail.com:465")
+        send_email(subject, html, text, notify_email, from_addr, password)
+        log("SMTP connection closed cleanly")
+        print(f"Alert sent: {subject}")
+        if failures:
+            sys.exit(1)
+    elif failures:
+        n = len(failures)
+        subject = f"Sewage alert warning: {n} company/companies could not be queried near {postcode}"
+        body_lines = [f"{n} company/companies could not be queried — results may be incomplete:\n"]
+        body_lines += [f"- {name}: {err}" for name, err in failures]
+        text = "\n".join(body_lines)
+        html = (
+            f"<html><body><p>{n} company/companies could not be queried — results may be incomplete:</p><ul>"
+            + "".join(f"<li>{name}: {err}</li>" for name, err in failures)
+            + "</ul></body></html>"
+        )
+        log(f"Sending error notification: {subject}")
+        send_email(subject, html, text, notify_email, from_addr, password)
+        print(f"Warning sent: {subject}")
+        sys.exit(1)
+    else:
+        print(f"No spills found within {radius_km}km of {postcode} in the last {lookback_hours}h.")
 
 
 if __name__ == "__main__":

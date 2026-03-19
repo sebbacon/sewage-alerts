@@ -310,10 +310,28 @@ class TestMain:
         "lookback_hours": 24,
         "notify_email": "user@example.com",
     }
+    COMPANIES_YAML = (
+        "companies:\n"
+        "  - name: Severn Trent Water\n"
+        "    query_url: https://fake1.arcgis.com/query\n"
+        "  - name: Thames Water\n"
+        "    query_url: https://fake2.arcgis.com/query\n"
+    )
 
-    def test_no_email_when_no_spills(self, tmp_path):
+    def _write_config(self, tmp_path):
+        import yaml
         config_file = tmp_path / "config.yml"
         config_file.write_text(yaml.dump(self.BASE_CONFIG))
+        return str(config_file)
+
+    def _write_companies(self, tmp_path, content=None):
+        companies_file = tmp_path / "companies.yml"
+        companies_file.write_text(content or self.COMPANIES_YAML)
+        return str(companies_file)
+
+    def test_no_email_when_no_spills(self, tmp_path):
+        config_file = self._write_config(tmp_path)
+        companies_file = self._write_companies(tmp_path)
 
         empty_features = {"type": "FeatureCollection", "features": []}
         postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
@@ -326,13 +344,13 @@ class TestMain:
         with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
              patch("smtplib.SMTP_SSL") as mock_smtp, \
              patch.dict("os.environ", {"GMAIL_ADDRESS": "sender@gmail.com", "GMAIL_APP_PASSWORD": "pw"}):
-            check_spills.main(config_path=str(config_file))
+            check_spills.main(config_path=config_file, companies_path=companies_file)
 
         mock_smtp.assert_not_called()
 
     def test_sends_email_when_spills_found(self, tmp_path):
-        config_file = tmp_path / "config.yml"
-        config_file.write_text(yaml.dump(self.BASE_CONFIG))
+        config_file = self._write_config(tmp_path)
+        companies_file = self._write_companies(tmp_path)
 
         features_payload = {"type": "FeatureCollection", "features": [SAMPLE_FEATURE]}
         postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
@@ -350,6 +368,93 @@ class TestMain:
         with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
              patch("smtplib.SMTP_SSL", return_value=mock_smtp_cm), \
              patch.dict("os.environ", {"GMAIL_ADDRESS": "sender@gmail.com", "GMAIL_APP_PASSWORD": "pw"}):
-            check_spills.main(config_path=str(config_file))
+            check_spills.main(config_path=config_file, companies_path=companies_file)
 
         mock_server.sendmail.assert_called_once()
+
+    def test_aggregates_spills_from_multiple_companies(self, tmp_path):
+        config_file = self._write_config(tmp_path)
+        companies_file = self._write_companies(tmp_path)
+
+        spill_1 = {**SAMPLE_FEATURE, "properties": {**SAMPLE_FEATURE["properties"], "Id": "AAA001"}}
+        spill_2 = {**SAMPLE_FEATURE, "properties": {**SAMPLE_FEATURE["properties"], "Id": "BBB001"}}
+        postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
+        call_count = [0]
+
+        def fake_urlopen(url, **kwargs):
+            if "postcodes.io" in url:
+                return _mock_urlopen(postcode_payload)
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _mock_urlopen({"type": "FeatureCollection", "features": [spill_1]})
+            return _mock_urlopen({"type": "FeatureCollection", "features": [spill_2]})
+
+        mock_server = MagicMock()
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_server
+        mock_smtp_cm.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+             patch("smtplib.SMTP_SSL", return_value=mock_smtp_cm), \
+             patch.dict("os.environ", {"GMAIL_ADDRESS": "sender@gmail.com", "GMAIL_APP_PASSWORD": "pw"}):
+            check_spills.main(config_path=config_file, companies_path=companies_file)
+
+        args = mock_server.sendmail.call_args[0]
+        assert "AAA001" in args[2]
+        assert "BBB001" in args[2]
+
+    def test_continues_and_exits_nonzero_on_partial_failure(self, tmp_path):
+        config_file = self._write_config(tmp_path)
+        companies_file = self._write_companies(tmp_path)
+
+        postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
+        call_count = [0]
+
+        def fake_urlopen(url, **kwargs):
+            if "postcodes.io" in url:
+                return _mock_urlopen(postcode_payload)
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise Exception("connection refused")
+            return _mock_urlopen({"type": "FeatureCollection", "features": [SAMPLE_FEATURE]})
+
+        mock_server = MagicMock()
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_server
+        mock_smtp_cm.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+             patch("smtplib.SMTP_SSL", return_value=mock_smtp_cm), \
+             patch.dict("os.environ", {"GMAIL_ADDRESS": "sender@gmail.com", "GMAIL_APP_PASSWORD": "pw"}), \
+             pytest.raises(SystemExit) as exc_info:
+            check_spills.main(config_path=config_file, companies_path=companies_file)
+
+        assert exc_info.value.code == 1
+        mock_server.sendmail.assert_called_once()
+
+    def test_sends_error_only_email_when_no_spills_but_failures(self, tmp_path):
+        config_file = self._write_config(tmp_path)
+        companies_file = self._write_companies(tmp_path)
+
+        postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
+
+        def fake_urlopen(url, **kwargs):
+            if "postcodes.io" in url:
+                return _mock_urlopen(postcode_payload)
+            raise Exception("timeout")
+
+        mock_server = MagicMock()
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_server
+        mock_smtp_cm.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+             patch("smtplib.SMTP_SSL", return_value=mock_smtp_cm), \
+             patch.dict("os.environ", {"GMAIL_ADDRESS": "sender@gmail.com", "GMAIL_APP_PASSWORD": "pw"}), \
+             pytest.raises(SystemExit) as exc_info:
+            check_spills.main(config_path=config_file, companies_path=companies_file)
+
+        assert exc_info.value.code == 1
+        mock_server.sendmail.assert_called_once()
+        args = mock_server.sendmail.call_args[0]
+        assert "could not be queried" in args[2]
