@@ -2,7 +2,7 @@
 
 Emails you when sewage overflow events start near your home. Runs automatically on a schedule using GitHub Actions.
 
-> **Geographic note:** This tool uses Severn Trent Water's dataset and only covers their service area (broadly the Midlands and parts of the East of England). If your postcode is outside this area, the script will run without error but will never find events.
+> **Geographic coverage:** This tool covers all 9 water companies in England and Wales (Anglian, Northumbrian, Severn Trent, South West, Southern, Thames, United Utilities, Wessex, and Yorkshire Water). Data is sourced from [streamwaterdata.co.uk](https://www.streamwaterdata.co.uk/pages/storm-overflows-data). Scottish postcodes are not covered.
 
 ## Prerequisites
 
@@ -102,6 +102,6 @@ To change the schedule, run `python configure.py` again.
 
 1. The workflow runs on your configured schedule
 2. It looks up your postcode's coordinates via [postcodes.io](https://postcodes.io)
-3. It queries Severn Trent Water's live overflow data for events that **started** within `lookback_hours` and within `radius_km` of your home
+3. It queries all 9 England and Wales water companies' live overflow data for events that **started** within `lookback_hours` and within `radius_km` of your home
 4. If any are found, it sends you an HTML email with a table of nearby spills
 5. If none are found, it exits silently — no email is sent
