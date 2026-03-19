@@ -233,6 +233,7 @@ class TestBuildHtmlEmail:
     def test_html_contains_all_row_fields(self):
         _, html = check_spills.build_html_email(SAMPLE_ROWS, "GL5 1HE", 20)
         assert "SVT001" in html
+        assert "Test Water Co" in html
         assert "RIVER TEST" in html
         assert "5.3" in html
         assert "2026-03-17 10:00 UTC" in html
@@ -244,14 +245,29 @@ class TestBuildHtmlEmail:
         assert "<tr>" in html or "<tr " in html
         assert "<th>" in html or "<th " in html
 
+    def test_html_appends_failure_warning(self):
+        subject, html = check_spills.build_html_email(
+            SAMPLE_ROWS, "GL5 1HE", 20, failures=[("United Utilities", "timeout")]
+        )
+        assert "United Utilities" in html
+        assert "unreported" in html
+
 
 class TestBuildTextEmail:
     def test_contains_all_row_fields(self):
         text = check_spills.build_text_email(SAMPLE_ROWS, "GL5 1HE", 20)
         assert "SVT001" in text
+        assert "Test Water Co" in text
         assert "RIVER TEST" in text
         assert "Ongoing" in text
         assert "GL5 1HE" in text
+
+    def test_text_appends_failure_warning(self):
+        text = check_spills.build_text_email(
+            SAMPLE_ROWS, "GL5 1HE", 20, failures=[("United Utilities", "timeout")]
+        )
+        assert "United Utilities" in text
+        assert "unreported" in text
 
 
 class TestSendEmail:

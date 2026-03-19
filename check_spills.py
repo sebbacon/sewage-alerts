@@ -143,12 +143,14 @@ def format_spill_row(feature: dict, home_lat: float, home_lon: float, company: s
     }
 
 
-def build_html_email(rows: list, postcode: str, radius_km: float) -> tuple[str, str]:
+def build_html_email(
+    rows: list, postcode: str, radius_km: float, failures: list | None = None
+) -> tuple[str, str]:
     """Return (subject, html_body) for the spill alert email."""
     count = len(rows)
     subject = f"Sewage alert: {count} spill(s) within {radius_km}km of {postcode}"
     rows_html = "\n".join(
-        f"<tr><td>{r['site_id']}</td><td>{r['watercourse']}</td>"
+        f"<tr><td>{r['company']}</td><td>{r['site_id']}</td><td>{r['watercourse']}</td>"
         f"<td>{r['distance_km']}</td><td>{r['started']}</td><td>{r['ended']}</td></tr>"
         for r in rows
     )
@@ -157,7 +159,7 @@ def build_html_email(rows: list, postcode: str, radius_km: float) -> tuple[str, 
 <table border="1" cellpadding="4" cellspacing="0">
   <thead>
     <tr>
-      <th>Site ID</th><th>Watercourse</th><th>Distance (km)</th>
+      <th>Company</th><th>Site ID</th><th>Watercourse</th><th>Distance (km)</th>
       <th>Event started</th><th>Event ended</th>
     </tr>
   </thead>
@@ -165,21 +167,35 @@ def build_html_email(rows: list, postcode: str, radius_km: float) -> tuple[str, 
     {rows_html}
   </tbody>
 </table>
-<p><small>Source: Severn Trent Water Storm Overflow Activity</small></p>
-</body></html>"""
+<p><small>Source: England and Wales water companies via streamwaterdata.co.uk</small></p>"""
+    if failures:
+        failed_names = ", ".join(name for name, _ in failures)
+        html += (
+            f"<p>&#x26A0; The following companies could not be queried and may have "
+            f"unreported events: {failed_names}</p>"
+        )
+    html += "\n</body></html>"
     return subject, html
 
 
-def build_text_email(rows: list, postcode: str, radius_km: float) -> str:
+def build_text_email(
+    rows: list, postcode: str, radius_km: float, failures: list | None = None
+) -> str:
     """Return plain-text body for the spill alert email."""
     count = len(rows)
     lines = [f"{count} sewage overflow event(s) near {postcode} (within {radius_km}km):\n"]
     for r in rows:
         lines.append(
-            f"- {r['site_id']} | {r['watercourse']} | {r['distance_km']}km "
+            f"- {r['company']} | {r['site_id']} | {r['watercourse']} | {r['distance_km']}km "
             f"| Started: {r['started']} | Ended: {r['ended']}"
         )
-    lines.append("\nSource: Severn Trent Water Storm Overflow Activity")
+    lines.append("\nSource: England and Wales water companies via streamwaterdata.co.uk")
+    if failures:
+        failed_names = ", ".join(name for name, _ in failures)
+        lines.append(
+            f"\n⚠ The following companies could not be queried and may have "
+            f"unreported events: {failed_names}"
+        )
     return "\n".join(lines)
 
 
