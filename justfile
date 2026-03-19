@@ -9,8 +9,12 @@ devsetup:
     uv pip install -r requirements-dev.txt -q
 
 # Run the spill check (mirrors "Check for nearby spills" step in check_spills.yml)
+# Override example: POSTCODE="GL1 1AA" RADIUS=10 just run
 run: devsetup
-    uv run python check_spills.py --verbose
+    uv run python check_spills.py --verbose \
+        ${POSTCODE:+--postcode "$POSTCODE"} \
+        ${RADIUS:+--radius "$RADIUS"} \
+        ${EMAIL:+--email "$EMAIL"}
 
 # Run tests
 test: devsetup

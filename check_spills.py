@@ -227,17 +227,23 @@ def send_email(
         sys.exit(1)
 
 
-def main(config_path: str = "config.yml", companies_path: str = "companies.yml") -> None:
+def main(
+    config_path: str = "config.yml",
+    companies_path: str = "companies.yml",
+    postcode_override: str | None = None,
+    radius_km_override: int | None = None,
+    notify_email_override: str | None = None,
+) -> None:
     log("Reading credentials from environment")
     from_addr = os.environ["GMAIL_ADDRESS"]
     password = os.environ["GMAIL_APP_PASSWORD"]
 
     log(f"Loading config from {config_path}")
     config = load_config(config_path)
-    postcode = config["postcode"]
-    radius_km = config["radius_km"]
+    postcode = postcode_override or config["postcode"]
+    radius_km = radius_km_override if radius_km_override is not None else config["radius_km"]
     lookback_hours = config["lookback_hours"]
-    notify_email = config["notify_email"]
+    notify_email = notify_email_override or config["notify_email"]
     log(f"Config: postcode={postcode}, radius={radius_km}km, lookback={lookback_hours}h, notify={notify_email}")
 
     validate_lookback_hours(lookback_hours)
@@ -297,9 +303,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Check for nearby sewage spills and send alerts.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Print progress to stdout")
     parser.add_argument("--config", default="config.yml", help="Path to config file")
+    parser.add_argument("--postcode", default=None, help="Override postcode from config")
+    parser.add_argument("--radius", type=int, default=None, help="Override radius_km from config")
+    parser.add_argument("--email", default=None, help="Override notify_email from config")
     args = parser.parse_args()
 
     if args.verbose:
         _verbose = True
 
-    main(config_path=args.config)
+    main(
+        config_path=args.config,
+        postcode_override=args.postcode,
+        radius_km_override=args.radius,
+        notify_email_override=args.email,
+    )
