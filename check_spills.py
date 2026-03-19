@@ -140,6 +140,7 @@ def format_spill_row(feature: dict, home_lat: float, home_lon: float, company: s
         "distance_km": round(distance, 1),
         "started": _fmt_epoch_ms(start),
         "ended": _fmt_epoch_ms(end),
+        "osm_url": f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=16",
     }
 
 
@@ -150,7 +151,9 @@ def build_html_email(
     count = len(rows)
     subject = f"Sewage alert: {count} spill(s) within {radius_km}km of {postcode}"
     rows_html = "\n".join(
-        f"<tr><td>{r['company']}</td><td>{r['site_id']}</td><td>{r['watercourse']}</td>"
+        f"<tr><td>{r['company']}</td>"
+        f"<td><a href=\"{r['osm_url']}\">{r['site_id']}</a></td>"
+        f"<td>{r['watercourse']}</td>"
         f"<td>{r['distance_km']}</td><td>{r['started']}</td><td>{r['ended']}</td></tr>"
         for r in rows
     )
@@ -187,7 +190,7 @@ def build_text_email(
     for r in rows:
         lines.append(
             f"- {r['company']} | {r['site_id']} | {r['watercourse']} | {r['distance_km']}km "
-            f"| Started: {r['started']} | Ended: {r['ended']}"
+            f"| Started: {r['started']} | Ended: {r['ended']} | {r['osm_url']}"
         )
     lines.append("\nSource: England and Wales water companies via streamwaterdata.co.uk")
     if failures:

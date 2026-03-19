@@ -220,6 +220,7 @@ SAMPLE_ROWS = [
         "distance_km": 5.3,
         "started": "2026-03-17 10:00 UTC",
         "ended": "Ongoing",
+        "osm_url": "https://www.openstreetmap.org/?mlat=51.752&mlon=-2.449&zoom=16",
     }
 ]
 
