@@ -351,10 +351,10 @@ class TestSendEmail:
 
 class TestMain:
     BASE_CONFIG = {
-        "postcode": "GL5 1HE",
-        "radius_km": 20,
         "lookback_hours": 24,
-        "notify_email": "user@example.com",
+        "recipients": [
+            {"postcode": "GL5 1HE", "radius_km": 20, "notify_email": "user@example.com"},
+        ],
     }
     COMPANIES_YAML = (
         "companies:\n"
@@ -504,3 +504,36 @@ class TestMain:
         mock_server.sendmail.assert_called_once()
         args = mock_server.sendmail.call_args[0]
         assert "could not be queried" in args[2]
+
+    def test_runs_for_each_recipient(self, tmp_path):
+        multi_config = {
+            "lookback_hours": 24,
+            "recipients": [
+                {"postcode": "GL5 1HE", "radius_km": 20, "notify_email": "alice@example.com"},
+                {"postcode": "SW1A 1AA", "radius_km": 10, "notify_email": "bob@example.com"},
+            ],
+        }
+        import yaml
+        config_file = tmp_path / "config.yml"
+        config_file.write_text(yaml.dump(multi_config))
+        companies_file = self._write_companies(tmp_path)
+
+        features_payload = {"type": "FeatureCollection", "features": [SAMPLE_FEATURE]}
+        postcode_payload = {"status": 200, "result": {"latitude": 51.745, "longitude": -2.216}}
+
+        def fake_urlopen(url, **kwargs):
+            if "postcodes.io" in url:
+                return _mock_urlopen(postcode_payload)
+            return _mock_urlopen(features_payload)
+
+        mock_server = MagicMock()
+        mock_smtp_cm = MagicMock()
+        mock_smtp_cm.__enter__.return_value = mock_server
+        mock_smtp_cm.__exit__.return_value = False
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+             patch("smtplib.SMTP_SSL", return_value=mock_smtp_cm), \
+             patch.dict("os.environ", {"GMAIL_ADDRESS": "sender@gmail.com", "GMAIL_APP_PASSWORD": "pw"}):
+            check_spills.main(config_path=str(config_file), companies_path=companies_file)
+
+        assert mock_server.sendmail.call_count == 2

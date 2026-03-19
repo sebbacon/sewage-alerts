@@ -284,63 +284,72 @@ def main(
 
     log(f"Loading config from {config_path}")
     config = load_config(config_path)
-    postcode = postcode_override or config["postcode"]
-    radius_km = radius_km_override if radius_km_override is not None else config["radius_km"]
     lookback_hours = config["lookback_hours"]
-    notify_email = notify_email_override or config["notify_email"]
-    log(f"Config: postcode={postcode}, radius={radius_km}km, lookback={lookback_hours}h, notify={notify_email}")
+
+    if postcode_override:
+        recipients = [{"postcode": postcode_override, "radius_km": radius_km_override, "notify_email": notify_email_override}]
+    else:
+        recipients = config["recipients"]
 
     validate_lookback_hours(lookback_hours)
-
-    log(f"Looking up coordinates for {postcode}")
-    home_lat, home_lon = get_postcode_coords(postcode)
-    log(f"Coordinates: lat={home_lat}, lon={home_lon}")
-
     companies = load_companies(companies_path)
-    log(f"Querying {len(companies)} water companies")
+    log(f"Querying {len(companies)} water companies for {len(recipients)} recipient(s)")
 
-    rows = []
-    failures = []
-    for company in companies:
-        log(f"Querying {company['name']} for spills in last {lookback_hours}h within {radius_km}km")
-        try:
-            features = query_spills(home_lat, home_lon, radius_km, lookback_hours, company["query_url"])
-            log(f"  {company['name']}: {len(features)} spill(s)")
-            rows += [format_spill_row(f, home_lat, home_lon, company["name"]) for f in features]
-        except Exception as exc:
-            failures.append((company["name"], str(exc)))
-            print(f"WARNING: {company['name']} query failed: {exc}", file=sys.stderr)
+    any_failures = False
+    for recipient in recipients:
+        postcode = recipient["postcode"]
+        radius_km = recipient["radius_km"]
+        notify_email = recipient["notify_email"]
+        log(f"Processing recipient: postcode={postcode}, radius={radius_km}km, notify={notify_email}")
 
-    for r in rows:
-        log(f"  Spill: {r['company']} | {r['site_id']} | {r['watercourse']} | {r['distance_km']}km | {r['started']} → {r['ended']}")
+        log(f"Looking up coordinates for {postcode}")
+        home_lat, home_lon = get_postcode_coords(postcode)
+        log(f"Coordinates: lat={home_lat}, lon={home_lon}")
 
-    if rows:
-        subject, html = build_html_email(rows, postcode, radius_km, failures=failures or None)
-        text = build_text_email(rows, postcode, radius_km, failures=failures or None)
-        log(f"Subject: {subject}")
-        log(f"Sending from {from_addr} to {notify_email} via smtp.gmail.com:465")
-        send_email(subject, html, text, notify_email, from_addr, password)
-        log("SMTP connection closed cleanly")
-        print(f"Alert sent: {subject}")
+        rows = []
+        failures = []
+        for company in companies:
+            log(f"Querying {company['name']} for spills in last {lookback_hours}h within {radius_km}km")
+            try:
+                features = query_spills(home_lat, home_lon, radius_km, lookback_hours, company["query_url"])
+                log(f"  {company['name']}: {len(features)} spill(s)")
+                rows += [format_spill_row(f, home_lat, home_lon, company["name"]) for f in features]
+            except Exception as exc:
+                failures.append((company["name"], str(exc)))
+                print(f"WARNING: {company['name']} query failed: {exc}", file=sys.stderr)
+
         if failures:
-            sys.exit(1)
-    elif failures:
-        n = len(failures)
-        subject = f"Sewage alert warning: {n} company/companies could not be queried near {postcode}"
-        body_lines = [f"{n} company/companies could not be queried — results may be incomplete:\n"]
-        body_lines += [f"- {name}: {err}" for name, err in failures]
-        text = "\n".join(body_lines)
-        html = (
-            f"<html><body><p>{n} company/companies could not be queried — results may be incomplete:</p><ul>"
-            + "".join(f"<li>{name}: {err}</li>" for name, err in failures)
-            + "</ul></body></html>"
-        )
-        log(f"Sending error notification: {subject}")
-        send_email(subject, html, text, notify_email, from_addr, password)
-        print(f"Warning sent: {subject}")
+            any_failures = True
+
+        for r in rows:
+            log(f"  Spill: {r['company']} | {r['site_id']} | {r['watercourse']} | {r['distance_km']}km | {r['started']} → {r['ended']}")
+
+        if rows:
+            subject, html = build_html_email(rows, postcode, radius_km, failures=failures or None)
+            text = build_text_email(rows, postcode, radius_km, failures=failures or None)
+            log(f"Sending from {from_addr} to {notify_email} via smtp.gmail.com:465")
+            send_email(subject, html, text, notify_email, from_addr, password)
+            log("SMTP connection closed cleanly")
+            print(f"Alert sent: {subject}")
+        elif failures:
+            n = len(failures)
+            subject = f"Sewage alert warning: {n} company/companies could not be queried near {postcode}"
+            body_lines = [f"{n} company/companies could not be queried — results may be incomplete:\n"]
+            body_lines += [f"- {name}: {err}" for name, err in failures]
+            text = "\n".join(body_lines)
+            html = (
+                f"<html><body><p>{n} company/companies could not be queried — results may be incomplete:</p><ul>"
+                + "".join(f"<li>{name}: {err}</li>" for name, err in failures)
+                + "</ul></body></html>"
+            )
+            log(f"Sending error notification: {subject}")
+            send_email(subject, html, text, notify_email, from_addr, password)
+            print(f"Warning sent: {subject}")
+        else:
+            print(f"No spills found within {radius_km}km of {postcode} in the last {lookback_hours}h.")
+
+    if any_failures:
         sys.exit(1)
-    else:
-        print(f"No spills found within {radius_km}km of {postcode} in the last {lookback_hours}h.")
 
 
 if __name__ == "__main__":
@@ -351,6 +360,11 @@ if __name__ == "__main__":
     parser.add_argument("--radius", type=int, default=None, help="Override radius_km from config")
     parser.add_argument("--email", default=None, help="Override notify_email from config")
     args = parser.parse_args()
+
+    overrides = [args.postcode, args.radius, args.email]
+    if any(v is not None for v in overrides) and not all(v is not None for v in overrides):
+        print("ERROR: --postcode, --radius, and --email must all be provided together.", file=sys.stderr)
+        sys.exit(1)
 
     if args.verbose:
         _verbose = True
