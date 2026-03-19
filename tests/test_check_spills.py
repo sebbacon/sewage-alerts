@@ -34,6 +34,40 @@ class TestLoadConfig:
         assert result["notify_email"] == "a@b.com"
 
 
+class TestLoadCompanies:
+    def test_loads_all_companies(self, tmp_path):
+        f = tmp_path / "companies.yml"
+        f.write_text(
+            "companies:\n"
+            "  - name: Anglian Water\n"
+            "    query_url: https://example.com/anglian/query\n"
+            "  - name: Thames Water\n"
+            "    query_url: https://example.com/thames/query\n"
+        )
+        result = check_spills.load_companies(str(f))
+        assert len(result) == 2
+        assert result[0] == {
+            "name": "Anglian Water",
+            "query_url": "https://example.com/anglian/query",
+        }
+        assert result[1] == {
+            "name": "Thames Water",
+            "query_url": "https://example.com/thames/query",
+        }
+
+    def test_ignores_comments_and_header(self, tmp_path):
+        f = tmp_path / "companies.yml"
+        f.write_text(
+            "# This is a comment\n"
+            "companies:\n"
+            "  - name: Test Water\n"
+            "    query_url: https://example.com/query\n"
+        )
+        result = check_spills.load_companies(str(f))
+        assert len(result) == 1
+        assert result[0]["name"] == "Test Water"
+
+
 class TestValidateLookbackHours:
     def test_standard_values_produce_no_warning(self, capsys):
         for hours in (6, 12, 24):

@@ -56,6 +56,26 @@ def load_config(path: str = "config.yml") -> dict:
     return config
 
 
+def load_companies(path: str = "companies.yml") -> list[dict]:
+    """Load water company endpoint list from a YAML file."""
+    companies = []
+    current: dict = {}
+    with open(path) as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped.startswith("#") or stripped in ("", "companies:"):
+                continue
+            if stripped.startswith("- name:"):
+                if current:
+                    companies.append(current)
+                current = {"name": stripped[len("- name:"):].strip()}
+            elif stripped.startswith("query_url:"):
+                current["query_url"] = stripped[len("query_url:"):].strip()
+    if current:
+        companies.append(current)
+    return companies
+
+
 def validate_lookback_hours(hours: int) -> None:
     """Warn to stderr if lookback_hours is not a recognised standard value."""
     if hours not in STANDARD_LOOKBACK_HOURS:
