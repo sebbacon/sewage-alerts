@@ -1,4 +1,5 @@
-postcode: "GL5 1HE"
-radius_km: 45
 lookback_hours: 24
-notify_email: "seb.bacon@gmail.com"
+recipients:
+  - postcode: "GL5 1HE"
+    radius_km: 45
+    notify_email: "seb.bacon@gmail.com"
