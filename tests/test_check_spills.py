@@ -103,6 +103,9 @@ class TestGetPostcodeCoords:
                 check_spills.get_postcode_coords("GL5 1HE")
 
 
+FAKE_QUERY_URL = "https://fake.arcgis.com/FeatureServer/0/query"
+
+
 SAMPLE_FEATURE = {
     "type": "Feature",
     "geometry": {"type": "Point", "coordinates": [-2.449, 51.752]},
@@ -121,20 +124,20 @@ class TestQuerySpills:
     def test_returns_features_list(self):
         payload = {"type": "FeatureCollection", "features": [SAMPLE_FEATURE]}
         with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
-            features = check_spills.query_spills(51.745, -2.216, 20, 24)
+            features = check_spills.query_spills(51.745, -2.216, 20, 24, FAKE_QUERY_URL)
         assert len(features) == 1
         assert features[0]["properties"]["Id"] == "SVT00291"
 
     def test_returns_empty_list_when_no_results(self):
         payload = {"type": "FeatureCollection", "features": []}
         with patch("urllib.request.urlopen", return_value=_mock_urlopen(payload)):
-            features = check_spills.query_spills(51.745, -2.216, 20, 24)
+            features = check_spills.query_spills(51.745, -2.216, 20, 24, FAKE_QUERY_URL)
         assert features == []
 
-    def test_exits_on_network_error(self):
+    def test_raises_on_network_error(self):
         with patch("urllib.request.urlopen", side_effect=Exception("network error")):
-            with pytest.raises(SystemExit):
-                check_spills.query_spills(51.745, -2.216, 20, 24)
+            with pytest.raises(RuntimeError, match="network error"):
+                check_spills.query_spills(51.745, -2.216, 20, 24, FAKE_QUERY_URL)
 
     def test_url_contains_interval_and_distance(self):
         payload = {"type": "FeatureCollection", "features": []}
@@ -145,13 +148,14 @@ class TestQuerySpills:
             return _mock_urlopen(payload)
 
         with patch("urllib.request.urlopen", side_effect=capturing_urlopen):
-            check_spills.query_spills(51.745, -2.216, 20, 24)
+            check_spills.query_spills(51.745, -2.216, 20, 24, FAKE_QUERY_URL)
 
         url = captured_url[0]
         assert "INTERVAL" in url
         assert "24" in url
         assert "20000" in url
         assert "esriSRUnit_Meter" in url
+        assert FAKE_QUERY_URL in url
 
 
 class TestFormatSpillRow:

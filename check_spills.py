@@ -23,10 +23,6 @@ def log(msg: str) -> None:
         print(f"  {msg}")
 
 
-ARCGIS_URL = (
-    "https://services1.arcgis.com/NO7lTIlnxRMMG9Gw/arcgis/rest/services/"
-    "Severn_Trent_Water_Storm_Overflow_Activity/FeatureServer/0/query"
-)
 POSTCODES_URL = "https://api.postcodes.io/postcodes/{}"
 STANDARD_LOOKBACK_HOURS = {6, 12, 24}
 
@@ -99,7 +95,7 @@ def get_postcode_coords(postcode: str) -> tuple[float, float]:
         sys.exit(1)
 
 
-def query_spills(lat: float, lon: float, radius_km: float, lookback_hours: int) -> list:
+def query_spills(lat: float, lon: float, radius_km: float, lookback_hours: int, query_url: str) -> list:
     """Query ArcGIS for overflow events within radius_km and lookback_hours of now."""
     params = urllib.parse.urlencode({
         "geometry": f"{lon},{lat}",
@@ -112,14 +108,13 @@ def query_spills(lat: float, lon: float, radius_km: float, lookback_hours: int) 
         "outFields": "*",
         "f": "geojson",
     })
-    url = f"{ARCGIS_URL}?{params}"
+    url = f"{query_url}?{params}"
     try:
         with urllib.request.urlopen(url) as resp:
             data = json.loads(resp.read())
         return data.get("features", [])
     except Exception as exc:
-        print(f"ERROR: Could not query ArcGIS API: {exc}", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f"ArcGIS query failed: {exc}") from exc
 
 
 def _fmt_epoch_ms(epoch_ms) -> str:
