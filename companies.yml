@@ -1,0 +1,27 @@
+# Endpoints discovered 2026-03-18 via ArcGIS Online public search API:
+#   https://www.arcgis.com/sharing/rest/search?q=Storm_Overflow_Activity&f=json&num=20
+# All 9 use the same ArcGIS FeatureServer REST API and INTERVAL SQL syntax.
+# ArcGIS SQL WHERE clauses are case-insensitive for field names.
+# South West Water uses camelCase field names in responses; all others use PascalCase.
+# Field normalisation is handled in check_spills.py.
+# Scottish Water (services3.arcgis.com/Bb8lfThdhugyc4G3) is intentionally excluded —
+# it is not part of the England/Wales streamwaterdata.co.uk data hub.
+companies:
+  - name: Anglian Water
+    query_url: https://services3.arcgis.com/VCOY1atHWVcDlvlJ/arcgis/rest/services/stream_service_outfall_locations_view/FeatureServer/0/query
+  - name: Northumbrian Water
+    query_url: https://services-eu1.arcgis.com/MSNNjkZ51iVh8yBj/arcgis/rest/services/Northumbrian_Water_Storm_Overflow_Activity_2_view/FeatureServer/0/query
+  - name: Severn Trent Water
+    query_url: https://services1.arcgis.com/NO7lTIlnxRMMG9Gw/arcgis/rest/services/Severn_Trent_Water_Storm_Overflow_Activity/FeatureServer/0/query
+  - name: South West Water
+    query_url: https://services-eu1.arcgis.com/OMdMOtfhATJPcHe3/arcgis/rest/services/NEH_outlets_PROD/FeatureServer/0/query
+  - name: Southern Water
+    query_url: https://services-eu1.arcgis.com/XxS6FebPX29TRGDJ/arcgis/rest/services/Southern_Water_Storm_Overflow_Activity/FeatureServer/0/query
+  - name: Thames Water
+    query_url: https://services2.arcgis.com/g6o32ZDQ33GpCIu3/arcgis/rest/services/Thames_Water_Storm_Overflow_Activity_(Production)_view/FeatureServer/0/query
+  - name: United Utilities
+    query_url: https://services5.arcgis.com/5eoLvR0f8HKb7HWP/arcgis/rest/services/United_Utilities_Storm_Overflow_Activity/FeatureServer/0/query
+  - name: Wessex Water
+    query_url: https://services.arcgis.com/3SZ6e0uCvPROr4mS/arcgis/rest/services/Wessex_Water_Storm_Overflow_Activity/FeatureServer/0/query
+  - name: Yorkshire Water
+    query_url: https://services-eu1.arcgis.com/1WqkK5cDKUbF0CkH/arcgis/rest/services/Yorkshire_Water_Storm_Overflow_Activity/FeatureServer/0/query
