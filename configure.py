@@ -3,6 +3,7 @@
 
 import re
 import sys
+import yaml
 
 WORKFLOW_PATH = ".github/workflows/check_spills.yml"
 CONFIG_PATH = "config.yml"
@@ -35,33 +36,37 @@ def patch_workflow_cron(cron_expr: str, workflow_path: str = WORKFLOW_PATH) -> N
 
 
 def read_config(path: str = CONFIG_PATH) -> dict:
-    """Read configuration from a YAML file without external dependencies."""
-    config: dict = {}
+    """Read configuration from a YAML file."""
     try:
         with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if ":" in line and not line.startswith("#"):
-                    key, _, value = line.partition(":")
-                    config[key.strip()] = value.strip().strip('"').strip("'")
+            data = yaml.safe_load(f) or {}
     except FileNotFoundError:
-        pass
-    return config
+        return {"recipients": []}
+
+    # Backwards compat: old flat format
+    if "recipients" not in data and "postcode" in data:
+        data["recipients"] = [{
+            "postcode": data.pop("postcode"),
+            "radius_km": data.pop("radius_km"),
+            "notify_email": data.pop("notify_email"),
+        }]
+    data.setdefault("recipients", [])
+    return data
 
 
 def write_config(
-    postcode: str,
-    radius_km: int,
     lookback_hours: int,
-    notify_email: str,
+    recipients: list[dict],
     path: str = CONFIG_PATH,
 ) -> None:
     """Write configuration to a YAML file."""
     with open(path, "w") as f:
-        f.write(f'postcode: "{postcode}"\n')
-        f.write(f"radius_km: {radius_km}\n")
         f.write(f"lookback_hours: {lookback_hours}\n")
-        f.write(f'notify_email: "{notify_email}"\n')
+        f.write("recipients:\n")
+        for r in recipients:
+            f.write(f'  - postcode: "{r["postcode"]}"\n')
+            f.write(f'    radius_km: {r["radius_km"]}\n')
+            f.write(f'    notify_email: "{r["notify_email"]}"\n')
 
 
 def _prompt(message: str, default: str = "") -> str:
@@ -73,13 +78,7 @@ def _prompt(message: str, default: str = "") -> str:
 def main() -> None:
     print("Welcome to Sewage Alerts setup!\n")
 
-    existing = read_config()
-
-    postcode = _prompt("Postcode", existing.get("postcode", "GL5 1HE"))
-    notify_email = _prompt("Notification email", existing.get("notify_email", ""))
-    radius_km = int(_prompt("Search radius (km)", str(existing.get("radius_km", 20))))
-
-    print("\nCheck interval:")
+    print("Check interval:")
     print("  1) Every 6 hours")
     print("  2) Every 12 hours")
     print("  3) Daily (default)")
@@ -103,7 +102,46 @@ def main() -> None:
             hour = int(_prompt("Hour to run (UTC, 0-23)", "7"))
         cron_expr, lookback_hours = build_cron_and_hours(choice, hour=hour)
 
-    write_config(postcode, radius_km, lookback_hours, notify_email)
+    recipients = read_config().get("recipients", [])
+
+    while True:
+        print("\nCurrent recipients:")
+        if recipients:
+            for i, r in enumerate(recipients, 1):
+                print(f"  {i}) {r['postcode']} | {r['radius_km']}km | {r['notify_email']}")
+        else:
+            print("  (none)")
+        choice_r = input("\n[a]dd  [e]dit N  [r]emove N  [d]one: ").strip().lower()
+        if choice_r == "a":
+            postcode = _prompt("Postcode")
+            radius_km = int(_prompt("Radius (km)", "20"))
+            email = _prompt("Email")
+            recipients.append({"postcode": postcode, "radius_km": radius_km, "notify_email": email})
+        elif choice_r.startswith("e"):
+            try:
+                n = int(choice_r[1:].strip()) - 1
+                r = recipients[n]
+                r["postcode"] = _prompt("Postcode", r["postcode"])
+                r["radius_km"] = int(_prompt("Radius (km)", str(r["radius_km"])))
+                r["notify_email"] = _prompt("Email", r["notify_email"])
+            except (ValueError, IndexError):
+                print("Invalid selection.")
+        elif choice_r.startswith("r"):
+            try:
+                n = int(choice_r[1:].strip()) - 1
+                if len(recipients) == 1:
+                    print("ERROR: must have at least one recipient.")
+                else:
+                    recipients.pop(n)
+            except (ValueError, IndexError):
+                print("Invalid selection.")
+        elif choice_r == "d":
+            if not recipients:
+                print("ERROR: must have at least one recipient.")
+            else:
+                break
+
+    write_config(lookback_hours, recipients)
     print(f"\n✓ Written {CONFIG_PATH}")
 
     patch_workflow_cron(cron_expr)

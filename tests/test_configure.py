@@ -45,18 +45,59 @@ class TestPatchWorkflowCron:
 
 
 class TestWriteConfig:
-    def test_writes_all_fields(self, tmp_path):
+    def test_writes_multi_recipient_format(self, tmp_path):
         config_path = str(tmp_path / "config.yml")
         configure.write_config(
-            postcode="SW1A 1AA",
-            radius_km=15,
-            lookback_hours=12,
-            notify_email="test@example.com",
+            lookback_hours=24,
+            recipients=[{"postcode": "GL5 1HE", "radius_km": 20, "notify_email": "test@example.com"}],
             path=config_path,
         )
         with open(config_path) as f:
             result = yaml.safe_load(f)
-        assert result["postcode"] == "SW1A 1AA"
-        assert result["radius_km"] == 15
+        assert result["lookback_hours"] == 24
+        assert len(result["recipients"]) == 1
+        assert result["recipients"][0]["postcode"] == "GL5 1HE"
+        assert result["recipients"][0]["radius_km"] == 20
+        assert result["recipients"][0]["notify_email"] == "test@example.com"
+
+    def test_writes_multiple_recipients(self, tmp_path):
+        config_path = str(tmp_path / "config.yml")
+        configure.write_config(
+            lookback_hours=12,
+            recipients=[
+                {"postcode": "GL5 1HE", "radius_km": 20, "notify_email": "a@example.com"},
+                {"postcode": "SW1A 1AA", "radius_km": 5, "notify_email": "b@example.com"},
+            ],
+            path=config_path,
+        )
+        with open(config_path) as f:
+            result = yaml.safe_load(f)
         assert result["lookback_hours"] == 12
-        assert result["notify_email"] == "test@example.com"
+        assert len(result["recipients"]) == 2
+        assert result["recipients"][1]["postcode"] == "SW1A 1AA"
+
+
+class TestReadConfig:
+    def test_reads_multi_recipient_format(self, tmp_path):
+        f = tmp_path / "config.yml"
+        f.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            '  - postcode: "GL5 1HE"\n'
+            "    radius_km: 20\n"
+            '    notify_email: "a@b.com"\n'
+        )
+        result = configure.read_config(str(f))
+        assert result["lookback_hours"] == 24
+        assert result["recipients"][0]["postcode"] == "GL5 1HE"
+
+    def test_flat_format_backwards_compat(self, tmp_path):
+        f = tmp_path / "config.yml"
+        f.write_text("postcode: GL5 1HE\nradius_km: 20\nlookback_hours: 24\nnotify_email: a@b.com\n")
+        result = configure.read_config(str(f))
+        assert len(result["recipients"]) == 1
+        assert result["recipients"][0]["postcode"] == "GL5 1HE"
+
+    def test_missing_file_returns_empty_recipients(self):
+        result = configure.read_config("/nonexistent/config.yml")
+        assert result == {"recipients": []}
