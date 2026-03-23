@@ -221,7 +221,11 @@ def main() -> None:
                 if len(recipients) == 1:
                     print("ERROR: must have at least one recipient.")
                 else:
-                    recipients.pop(n)
+                    removed_recipient = recipients.pop(n)
+                    if "slug" in removed_recipient:
+                        slug_upper = removed_recipient["slug"].upper()
+                        print(f"Note: GitHub Secrets RECIPIENT_{slug_upper}_POSTCODE and RECIPIENT_{slug_upper}_EMAIL were not deleted automatically.")
+                        print(f"Run: gh secret delete RECIPIENT_{slug_upper}_POSTCODE && gh secret delete RECIPIENT_{slug_upper}_EMAIL")
             except (ValueError, IndexError):
                 print("Invalid selection.")
         elif choice_r == "d":
@@ -236,14 +240,25 @@ def main() -> None:
     patch_workflow_cron(cron_expr, workflow_path=WORKFLOW_PATH)
     print(f"✓ Updated {WORKFLOW_PATH}")
 
-    print(f"""
-Setup complete! Run these commands to finish:
+    slugs = [r["slug"] for r in recipients if "slug" in r]
+    patch_workflow_env(slugs, workflow_path=WORKFLOW_PATH)
 
+    session_secrets_section = ""
+    if new_slugs_this_session:
+        lines = ["Secrets already set this session:"]
+        for slug in new_slugs_this_session:
+            s = slug.upper()
+            lines.append(f"  RECIPIENT_{s}_POSTCODE, RECIPIENT_{s}_EMAIL")
+        session_secrets_section = "\n" + "\n".join(lines) + "\n"
+
+    print(f"""
+Setup complete!
+
+Still to do:
   gh secret set GMAIL_ADDRESS
   gh secret set GMAIL_APP_PASSWORD
-
+{session_secrets_section}
 Then push and test:
-
   git add {CONFIG_PATH} {WORKFLOW_PATH}
   git commit -m "configure sewage alerts"
   git push -u origin main

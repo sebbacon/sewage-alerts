@@ -439,3 +439,109 @@ class TestAddSlugRecipient:
         slugs = [r.get("slug") for r in result["recipients"] if "slug" in r]
         assert "bob" in slugs
         assert slugs.count("alice") == 1  # original, not duplicated
+
+
+class TestConfigureMainFinal:
+    """Tests for patch_workflow_env wiring, remove hint, and post-setup message."""
+
+    def _make_workflow(self, tmp_path):
+        workflow = tmp_path / "check_spills.yml"
+        workflow.write_text(
+            "    - cron: '0 7 * * *'\n"
+            "        env:\n"
+            "          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}\n"
+            "          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}\n"
+        )
+        return workflow
+
+    def test_patch_workflow_env_called_with_slugs(self, tmp_path, monkeypatch):
+        """patch_workflow_env is called with the slug list when there's one slug recipient."""
+        workflow = self._make_workflow(tmp_path)
+
+        calls = []
+        monkeypatch.setattr("configure.write_config", lambda *a, **kw: None)
+        monkeypatch.setattr("configure.patch_workflow_cron", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            "configure.patch_workflow_env",
+            lambda slugs, workflow_path=None: calls.append(slugs),
+        )
+        monkeypatch.setattr(
+            "configure.read_config",
+            lambda path=None: {"recipients": [{"slug": "alice", "radius_km": 15}]},
+        )
+        monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
+
+        inputs = iter(["3", "7", "d"])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+        configure.main()
+
+        assert calls == [["alice"]]
+
+    def test_remove_slug_prints_cleanup_hint(self, tmp_path, monkeypatch, capsys):
+        """Removing a slug recipient prints a cleanup note."""
+        workflow = self._make_workflow(tmp_path)
+
+        monkeypatch.setattr("configure.write_config", lambda *a, **kw: None)
+        monkeypatch.setattr("configure.patch_workflow_cron", lambda *a, **kw: None)
+        monkeypatch.setattr("configure.patch_workflow_env", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            "configure.read_config",
+            lambda path=None: {
+                "recipients": [
+                    {"slug": "alice", "radius_km": 15},
+                    {"postcode": "GL5 1HE", "radius_km": 20, "notify_email": "a@b.com"},
+                ]
+            },
+        )
+        monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
+
+        # r 1 removes the first recipient (alice, the slug one)
+        inputs = iter(["3", "7", "r 1", "d"])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+        configure.main()
+        captured = capsys.readouterr()
+        assert "gh secret delete RECIPIENT_ALICE_POSTCODE" in captured.out
+
+    def test_post_setup_message_includes_session_slugs(self, tmp_path, monkeypatch, capsys):
+        """Post-setup message includes 'Secrets already set this session' for new slug recipients."""
+        workflow = self._make_workflow(tmp_path)
+        config = tmp_path / "config.yml"
+        config.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            '  - postcode: "GL5 1HE"\n'
+            "    radius_km: 20\n"
+            '    notify_email: "a@b.com"\n'
+        )
+
+        monkeypatch.setattr("configure.write_config", lambda *a, **kw: None)
+        monkeypatch.setattr("configure.patch_workflow_cron", lambda *a, **kw: None)
+        monkeypatch.setattr("configure.patch_workflow_env", lambda *a, **kw: None)
+        monkeypatch.setattr("configure.CONFIG_PATH", str(config))
+        monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
+        monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = b""
+        monkeypatch.setattr("subprocess.run", lambda *a, **kw: mock_result)
+
+        # Add a slug recipient (alice) then done
+        inputs = iter([
+            "3",        # daily schedule
+            "7",        # hour
+            "a",        # add
+            "15",       # radius
+            "y",        # use secrets
+            "alice",    # slug
+            "SW1A 2AA", # postcode
+            "test@example.com",  # email
+            "d",        # done
+        ])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+        configure.main()
+        captured = capsys.readouterr()
+        assert "RECIPIENT_ALICE_POSTCODE" in captured.out
