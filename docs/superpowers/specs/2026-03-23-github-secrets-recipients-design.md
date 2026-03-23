@@ -30,40 +30,87 @@ recipients:
 
 The presence of `slug` (instead of `postcode`) is the discriminator. No extra flag is needed.
 
-The slug must be a short alphanumeric-and-hyphen string (e.g. `alice`, `home`, `mum`). It is uppercased to form secret names: `RECIPIENT_ALICE_POSTCODE`, `RECIPIENT_ALICE_EMAIL`.
+The slug must be a short string of letters, digits, and underscores only — no hyphens. It is uppercased to form secret names: `RECIPIENT_ALICE_POSTCODE`, `RECIPIENT_ALICE_EMAIL`. `configure.py` must validate the slug against `^[A-Za-z0-9_]+$` and re-prompt on failure.
+
+Slugs must be unique across all recipients. `configure.py` must check for duplicates at add time and reject collisions. If duplicate slugs exist in `config.yml` (e.g. hand-edited), `read_config` in `configure.py` should print a warning to stderr and continue.
 
 ## Changes to configure.py
 
-### Adding / editing a recipient
+### New imports required
 
-After collecting the radius, the script asks:
+Add to `configure.py`:
+```python
+import shutil
+import subprocess
+```
+
+`shutil` is needed for `shutil.which("gh")`. `subprocess` is needed to invoke `gh secret set` and capture its exit code. Use `subprocess.run(["gh", "secret", "set", name, "--body", value], capture_output=True)` and check `.returncode`.
+
+### `gh` availability check
+
+At the start of `main()`, check `shutil.which("gh")`. Store the result as a boolean `gh_available`. If `gh` is not available, skip the secrets prompt when adding a recipient and proceed with plaintext.
+
+### read_config changes
+
+`read_config` uses `yaml.safe_load`. YAML parses `slug: 123` as an integer. After loading, cast each recipient's `slug` value to `str` if present:
+
+```python
+for r in data.get("recipients", []):
+    if "slug" in r:
+        r["slug"] = str(r["slug"])
+```
+
+### Adding a recipient
+
+After collecting the radius, and only if `gh_available`, the script asks:
 
 ```
 Store postcode and email in GitHub Secrets? [y/N]:
 ```
 
-**If N (default):** collect postcode and email as today; store all three fields in config.
+**If N (default):** collect postcode and email as today.
 
 **If Y (secret-backed):**
-1. Prompt for a slug (short identifier, e.g. `alice`).
-2. Prompt for postcode; run `gh secret set RECIPIENT_{SLUG}_POSTCODE --body "<value>"`.
-3. Prompt for email; run `gh secret set RECIPIENT_{SLUG}_EMAIL --body "<value>"`.
-4. Store only `slug` and `radius_km` in config.
-5. Patch the workflow YAML to expose the two new secrets as env vars (see below).
+1. Prompt for a slug. Validate against `^[A-Za-z0-9_]+$`; re-prompt if invalid. Check uniqueness with `any(r.get("slug") == slug for r in recipients)`; reject and re-prompt if collision.
+2. Prompt for postcode; run `gh secret set RECIPIENT_{SLUG}_POSTCODE --body "<value>"`. If this fails (non-zero exit), print the error, do not append the recipient, and return to the main menu.
+3. Prompt for email; run `gh secret set RECIPIENT_{SLUG}_EMAIL --body "<value>"`. If this fails, print the error, do not append the recipient, and return to the main menu. Note to the user that the postcode secret was already set and will need manual cleanup if they abandon this slug (`gh secret delete RECIPIENT_{SLUG}_POSTCODE`). Do not attempt automatic rollback.
+4. Append `{"slug": slug, "radius_km": radius_km}` to the in-memory recipients list.
 
-If `gh` is not available or the secret-set commands fail, print a clear error and abort adding that recipient.
+If the user retries with the same slug after a failure at step 3, the duplicate-slug check will not block them (the recipient was not appended). The second attempt will overwrite the orphaned postcode secret at step 2, which is harmless.
+
+`write_config` and `patch_workflow_env` are called once at the end of `main()` after all editing is done.
+
+### Editing a recipient
+
+When the user selects `e N`:
+
+- If the recipient has a `slug`, only allow editing the radius using `_prompt("Radius (km)", str(r["radius_km"]))`. Print a note before the prompt:
+  ```
+  Note: postcode and email are stored in GitHub Secrets.
+  To update them run:
+    gh secret set RECIPIENT_ALICE_POSTCODE
+    gh secret set RECIPIENT_ALICE_EMAIL
+  ```
+  Do not access `r["postcode"]` or `r["notify_email"]` for slug-backed recipients.
+
+- If the recipient has a `postcode`, edit as today.
+
+Converting between slug-backed and plaintext is not supported; the user should remove and re-add.
 
 ### Listing recipients
 
-```
-Current recipients:
-  1) [secrets: alice]  | 20km
-  2) SW1A 2AA | 15km | bob@example.com
+**This is a crash fix as well as a display change.** The existing listing loop accesses `r["postcode"]` and `r["notify_email"]` unconditionally; this raises `KeyError` immediately for any slug-backed recipient loaded from config. Replace the listing line with:
+
+```python
+if "slug" in r:
+    print(f"  {i}) [secrets: {r['slug']}] | {r['radius_km']}km")
+else:
+    print(f"  {i}) {r['postcode']} | {r['radius_km']}km | {r['notify_email']}")
 ```
 
 ### Removing a secret-backed recipient
 
-Remove from config and patch the workflow as normal. Print a reminder:
+Remove from the in-memory list as normal. Print a reminder:
 
 ```
 Note: GitHub Secrets RECIPIENT_ALICE_POSTCODE and RECIPIENT_ALICE_EMAIL were not deleted automatically.
@@ -72,42 +119,80 @@ Run: gh secret delete RECIPIENT_ALICE_POSTCODE && gh secret delete RECIPIENT_ALI
 
 ### write_config changes
 
-`write_config` handles both shapes:
+`write_config` must branch on recipient shape. For slug-backed recipients, `slug` is always written as the first field on the `- ` line (required by `check_spills.py`'s hand-rolled parser — see below):
 
-```yaml
-# secret-backed
-  - slug: alice
-    radius_km: 15
-
-# plaintext
-  - postcode: "SW1A 2AA"
-    radius_km: 20
-    notify_email: "bob@example.com"
+```python
+for r in recipients:
+    if "slug" in r:
+        f.write(f'  - slug: {r["slug"]}\n')
+        f.write(f'    radius_km: {r["radius_km"]}\n')
+    else:
+        f.write(f'  - postcode: "{r["postcode"]}"\n')
+        f.write(f'    radius_km: {r["radius_km"]}\n')
+        f.write(f'    notify_email: "{r["notify_email"]}"\n')
 ```
 
-### Workflow patching
+### patch_workflow_env (new function)
 
-`configure.py` already patches the cron schedule. It will also manage the `env:` block in the workflow, rewriting it on every run to reflect the current recipient list. The fixed secrets (`GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`) are always present; `RECIPIENT_*` entries are added/removed to match the current set of slug-based recipients.
+Add `patch_workflow_env(slugs: list[str], workflow_path: str) -> None`. It rewrites the `env:` block under the `Check for nearby spills` step unconditionally — even when `slugs` is empty, it must rewrite the block so that previously injected slug env vars are removed when a slug recipient is deleted.
 
-Example resulting env block:
+The replacement string is built as:
 
-```yaml
-env:
-  GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
-  GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-  RECIPIENT_ALICE_POSTCODE: ${{ secrets.RECIPIENT_ALICE_POSTCODE }}
-  RECIPIENT_ALICE_EMAIL: ${{ secrets.RECIPIENT_ALICE_EMAIL }}
+```python
+lines = [
+    "        env:\n",
+    "          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}\n",
+    "          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}\n",
+]
+for slug in slugs:
+    s = slug.upper()
+    lines.append(f"          RECIPIENT_{s}_POSTCODE: ${{{{ secrets.RECIPIENT_{s}_POSTCODE }}}}\n")
+    lines.append(f"          RECIPIENT_{s}_EMAIL: ${{{{ secrets.RECIPIENT_{s}_EMAIL }}}}\n")
+replacement = "".join(lines)
 ```
 
-The patch targets the `env:` key under the `Check for nearby spills` step, replacing it in full each time.
+The regex replaces from the `env:` line to end of file (the env block is always the last content in the workflow file). The replacement includes the trailing newline on the last line, so the file ends with exactly one newline:
+
+```python
+content = re.sub(r'        env:.*', replacement.rstrip("\n"), content, flags=re.DOTALL)
+```
+
+After substitution, write `content + "\n"` to the file to ensure a single trailing newline.
+
+Called from `main()` once at the end, immediately after `patch_workflow_cron`.
+
+### Post-setup summary message
+
+Always include the two `GMAIL_*` secret commands. If any slug-backed recipients were successfully appended to the list during the session, note that their secrets were already set. Omit this section if none:
+
+```
+Setup complete!
+
+Still to do:
+  gh secret set GMAIL_ADDRESS
+  gh secret set GMAIL_APP_PASSWORD
+
+Secrets already set this session:
+  RECIPIENT_ALICE_POSTCODE, RECIPIENT_ALICE_EMAIL
+
+Then push and test:
+  git add config.yml .github/workflows/check_spills.yml
+  git commit -m "configure sewage alerts"
+  git push -u origin main
+  gh workflow run check_spills.yml
+```
 
 ## Changes to check_spills.py
 
-### load_config / load_recipients
+### load_config
 
-`load_config` is unchanged structurally; it returns recipients with whatever fields are present in the YAML.
+`load_config` uses a hand-rolled line parser that reads any `key: value` pair under a recipient entry into the dict. For slug-backed recipients, this correctly produces `{"slug": "alice", "radius_km": 15}` — but only if `slug` is the first key on the `- ` line. `write_config` always writes `slug` first, so machine-written configs are safe. Hand-edited configs that place `radius_km` first would cause `slug` to be silently dropped; this is pre-existing parser fragility and is out of scope to fix here.
 
-At runtime, when iterating recipients in `main()`, add a resolution step before using `postcode` and `notify_email`:
+`load_config` does not use `yaml.safe_load`, so there is no integer-slug issue (all values are strings from the hand-rolled parser).
+
+### Recipient resolution in main()
+
+Before using `postcode` and `notify_email` for each recipient, add a resolution step:
 
 ```python
 if "slug" in recipient:
@@ -119,14 +204,20 @@ else:
     notify_email = recipient["notify_email"]
 ```
 
-A missing environment variable raises `KeyError`, which will surface as an unhandled exception with a clear message indicating which variable is absent. No special error handling is needed beyond what the workflow log provides.
+A missing env var raises `KeyError` with a message naming the missing variable. No additional handling needed — the workflow log surfaces it immediately.
+
+### CLI override flags
+
+`--postcode`, `--radius`, `--email` remain plaintext-only and unchanged. Intentional.
 
 ### Backwards compatibility
 
-The existing `load_config` backwards-compat path (flat format → recipients list) is unaffected; it only fires when `postcode` is present at the top level.
+Existing flat-format backwards-compat path is unaffected.
 
 ## Out of Scope
 
 - Migrating existing plaintext recipients to secrets automatically.
-- Validating postcode format during configure (already not done).
+- Validating postcode format during configure.
 - Deleting secrets automatically on recipient removal.
+- Converting a recipient between slug-backed and plaintext in-place.
+- Fixing the hand-rolled parser's first-key-must-be-on-dash-line fragility.
