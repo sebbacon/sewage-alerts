@@ -349,6 +349,34 @@ class TestSendEmail:
                 )
 
 
+class TestResolveRecipient:
+    def test_plaintext_recipient_unchanged(self):
+        r = {"postcode": "GL5 1HE", "radius_km": 20, "notify_email": "a@b.com"}
+        postcode, email = check_spills.resolve_recipient(r)
+        assert postcode == "GL5 1HE"
+        assert email == "a@b.com"
+
+    def test_slug_recipient_reads_env(self, monkeypatch):
+        monkeypatch.setenv("RECIPIENT_ALICE_POSTCODE", "SW1A 2AA")
+        monkeypatch.setenv("RECIPIENT_ALICE_EMAIL", "alice@example.com")
+        r = {"slug": "alice", "radius_km": 15}
+        postcode, email = check_spills.resolve_recipient(r)
+        assert postcode == "SW1A 2AA"
+        assert email == "alice@example.com"
+
+    def test_slug_uppercased_for_env_lookup(self, monkeypatch):
+        monkeypatch.setenv("RECIPIENT_MYSLUG_POSTCODE", "EC1A 1BB")
+        monkeypatch.setenv("RECIPIENT_MYSLUG_EMAIL", "x@y.com")
+        r = {"slug": "myslug", "radius_km": 10}
+        postcode, email = check_spills.resolve_recipient(r)
+        assert postcode == "EC1A 1BB"
+
+    def test_missing_env_var_raises_key_error(self):
+        r = {"slug": "ghost", "radius_km": 10}
+        with pytest.raises(KeyError, match="RECIPIENT_GHOST_POSTCODE"):
+            check_spills.resolve_recipient(r)
+
+
 class TestMain:
     BASE_CONFIG = {
         "lookback_hours": 24,

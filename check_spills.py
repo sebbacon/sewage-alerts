@@ -45,6 +45,18 @@ def _set_recipient_field(d: dict, key: str, val: str) -> None:
         d[key] = val
 
 
+def resolve_recipient(recipient: dict) -> tuple[str, str]:
+    """Return (postcode, notify_email) for a recipient, reading from env if slug-backed."""
+    if "slug" in recipient:
+        slug = recipient["slug"].upper()
+        postcode = os.environ[f"RECIPIENT_{slug}_POSTCODE"]
+        notify_email = os.environ[f"RECIPIENT_{slug}_EMAIL"]
+    else:
+        postcode = recipient["postcode"]
+        notify_email = recipient["notify_email"]
+    return postcode, notify_email
+
+
 def load_config(path: str = "config.yml") -> dict:
     """Load configuration from a YAML file, returning {lookback_hours, recipients: [...]}."""
     top: dict = {}
@@ -297,9 +309,8 @@ def main(
 
     any_failures = False
     for recipient in recipients:
-        postcode = recipient["postcode"]
+        postcode, notify_email = resolve_recipient(recipient)
         radius_km = recipient["radius_km"]
-        notify_email = recipient["notify_email"]
         log(f"Processing recipient: postcode={postcode}, radius={radius_km}km, notify={notify_email}")
 
         log(f"Looking up coordinates for {postcode}")
