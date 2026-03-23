@@ -371,7 +371,8 @@ class TestResolveRecipient:
         postcode, email = check_spills.resolve_recipient(r)
         assert postcode == "EC1A 1BB"
 
-    def test_missing_env_var_raises_key_error(self):
+    def test_missing_env_var_raises_key_error(self, monkeypatch):
+        monkeypatch.delenv("RECIPIENT_GHOST_POSTCODE", raising=False)
         r = {"slug": "ghost", "radius_km": 10}
         with pytest.raises(KeyError, match="RECIPIENT_GHOST_POSTCODE"):
             check_spills.resolve_recipient(r)
