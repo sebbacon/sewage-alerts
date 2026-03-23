@@ -146,7 +146,10 @@ def main() -> None:
         print("\nCurrent recipients:")
         if recipients:
             for i, r in enumerate(recipients, 1):
-                print(f"  {i}) {r['postcode']} | {r['radius_km']}km | {r['notify_email']}")
+                if "slug" in r:
+                    print(f"  {i}) [secrets: {r['slug']}] | {r['radius_km']}km")
+                else:
+                    print(f"  {i}) {r['postcode']} | {r['radius_km']}km | {r['notify_email']}")
         else:
             print("  (none)")
         choice_r = input("\n[a]dd  [e]dit N  [r]emove N  [d]one: ").strip().lower()
@@ -159,9 +162,17 @@ def main() -> None:
             try:
                 n = int(choice_r[1:].strip()) - 1
                 r = recipients[n]
-                r["postcode"] = _prompt("Postcode", r["postcode"])
-                r["radius_km"] = int(_prompt("Radius (km)", str(r["radius_km"])))
-                r["notify_email"] = _prompt("Email", r["notify_email"])
+                if "slug" in r:
+                    slug_upper = r["slug"].upper()
+                    print(f"Note: postcode and email are stored in GitHub Secrets.")
+                    print(f"To update them run:")
+                    print(f"  gh secret set RECIPIENT_{slug_upper}_POSTCODE")
+                    print(f"  gh secret set RECIPIENT_{slug_upper}_EMAIL")
+                    r["radius_km"] = int(_prompt("Radius (km)", str(r["radius_km"])))
+                else:
+                    r["postcode"] = _prompt("Postcode", r["postcode"])
+                    r["radius_km"] = int(_prompt("Radius (km)", str(r["radius_km"])))
+                    r["notify_email"] = _prompt("Email", r["notify_email"])
             except (ValueError, IndexError):
                 print("Invalid selection.")
         elif choice_r.startswith("r"):

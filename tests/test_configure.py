@@ -189,6 +189,65 @@ class TestReadConfig:
         assert len(result["recipients"]) == 2  # continues, does not abort
 
 
+class TestConfigureMainSlugDisplay:
+    """Test that the listing loop doesn't crash on slug-backed recipients."""
+
+    def test_list_slug_recipient_no_crash(self, tmp_path, monkeypatch, capsys):
+        config = tmp_path / "config.yml"
+        config.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            "  - slug: alice\n"
+            "    radius_km: 15\n"
+        )
+        workflow = tmp_path / "check_spills.yml"
+        workflow.write_text(
+            "    - cron: '0 7 * * *'\n"
+            "        env:\n"
+            "          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}\n"
+            "          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}\n"
+        )
+        inputs = iter(["3", "", "d"])  # choice=daily, "" accepts default hour, then done
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+        monkeypatch.setattr("configure.CONFIG_PATH", str(config))
+        monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
+        # Patch read_config to use the test config
+        original_read_config = configure.read_config
+        monkeypatch.setattr("configure.read_config", lambda path=None: original_read_config(str(config)))
+        configure.main()
+        captured = capsys.readouterr()
+        assert "[secrets: alice]" in captured.out
+        assert "20km" not in captured.out  # radius is 15
+
+    def test_list_plaintext_recipient_unchanged(self, tmp_path, monkeypatch, capsys):
+        config = tmp_path / "config.yml"
+        config.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            '  - postcode: "GL5 1HE"\n'
+            "    radius_km: 20\n"
+            '    notify_email: "a@b.com"\n'
+        )
+        workflow = tmp_path / "check_spills.yml"
+        workflow.write_text(
+            "    - cron: '0 7 * * *'\n"
+            "        env:\n"
+            "          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}\n"
+            "          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}\n"
+        )
+        inputs = iter(["3", "", "d"])  # "" accepts default hour
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+        monkeypatch.setattr("configure.CONFIG_PATH", str(config))
+        monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
+        # Patch read_config to use the test config
+        original_read_config = configure.read_config
+        monkeypatch.setattr("configure.read_config", lambda path=None: original_read_config(str(config)))
+        configure.main()
+        captured = capsys.readouterr()
+        assert "GL5 1HE" in captured.out
+        assert "a@b.com" in captured.out
+
+
 class TestPatchWorkflowEnv:
     WORKFLOW_BASE = (
         "name: Check sewage spills\n"
