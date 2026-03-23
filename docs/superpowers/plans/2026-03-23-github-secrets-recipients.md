@@ -568,7 +568,13 @@ git commit -m "fix: listing and edit paths handle slug-backed recipients"
 
 - [ ] **Step 1: Write failing tests**
 
-Add `TestAddSlugRecipient` to `tests/test_configure.py`:
+Add to the top-level imports in `tests/test_configure.py`:
+
+```python
+from unittest.mock import MagicMock
+```
+
+Then add `TestAddSlugRecipient` to `tests/test_configure.py`:
 
 ```python
 class TestAddSlugRecipient:
@@ -601,7 +607,6 @@ class TestAddSlugRecipient:
         return yaml.safe_load(config.read_text())
 
     def test_add_slug_recipient_stores_slug_not_pii(self, tmp_path, monkeypatch):
-        from unittest.mock import MagicMock
         inputs = iter([
             "3",        # daily schedule
             "",         # accept default hour (7)
@@ -620,7 +625,6 @@ class TestAddSlugRecipient:
         assert "GL5 1HE" not in postcodes  # the slug recipient's postcode not in config
 
     def test_add_slug_recipient_gh_not_available_skips_option(self, tmp_path, monkeypatch, capsys):
-        from unittest.mock import MagicMock
         # When gh is unavailable, the secrets prompt should not appear; goes straight to postcode
         inputs = iter([
             "3",
@@ -637,7 +641,6 @@ class TestAddSlugRecipient:
         assert len(new) == 1
 
     def test_invalid_slug_reprompts(self, tmp_path, monkeypatch, capsys):
-        from unittest.mock import MagicMock
         inputs = iter([
             "3",
             "",          # accept default hour
@@ -655,7 +658,6 @@ class TestAddSlugRecipient:
         assert "goodslug" in [r.get("slug") for r in result["recipients"] if "slug" in r]
 
     def test_duplicate_slug_reprompts(self, tmp_path, monkeypatch, capsys):
-        from unittest.mock import MagicMock
         # Start with existing slug alice in config
         config = tmp_path / "config.yml"
         config.write_text(
