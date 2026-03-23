@@ -61,6 +61,42 @@ class TestLoadConfig:
         assert result["recipients"][0]["radius_km"] == 45
         assert result["recipients"][0]["notify_email"] == "a@b.com"
 
+    def test_loads_slug_recipient(self, tmp_path):
+        f = tmp_path / "config.yml"
+        f.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            "  - slug: alice\n"
+            "    radius_km: 15\n"
+        )
+        result = check_spills.load_config(str(f))
+        assert result["lookback_hours"] == 24
+        assert len(result["recipients"]) == 1
+        assert result["recipients"][0] == {
+            "slug": "alice", "radius_km": 15
+        }
+
+    def test_loads_mixed_recipients(self, tmp_path):
+        f = tmp_path / "config.yml"
+        f.write_text(
+            "lookback_hours: 6\n"
+            "recipients:\n"
+            '  - postcode: "SW1A 2AA"\n'
+            "    radius_km: 20\n"
+            '    notify_email: "bob@example.com"\n'
+            "  - slug: charlie\n"
+            "    radius_km: 10\n"
+        )
+        result = check_spills.load_config(str(f))
+        assert result["lookback_hours"] == 6
+        assert len(result["recipients"]) == 2
+        assert result["recipients"][0] == {
+            "postcode": "SW1A 2AA", "radius_km": 20, "notify_email": "bob@example.com"
+        }
+        assert result["recipients"][1] == {
+            "slug": "charlie", "radius_km": 10
+        }
+
 
 class TestLoadConfigBackwardsCompat:
     def test_flat_format_becomes_single_recipient(self, tmp_path):
