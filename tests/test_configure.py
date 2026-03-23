@@ -355,7 +355,7 @@ class TestAddSlugRecipient:
             "15",       # radius
             "y",        # use secrets
             "alice",    # slug
-            "GL5 1HE",  # postcode (sent to gh, not stored)
+            "SW1A 2AA",  # postcode (sent to gh, not stored)
             "a@b.com",  # email (sent to gh, not stored)
             "d",        # done
         ])
@@ -363,7 +363,7 @@ class TestAddSlugRecipient:
         slugs = [r.get("slug") for r in result["recipients"] if "slug" in r]
         assert "alice" in slugs
         postcodes = [r.get("postcode") for r in result["recipients"] if "postcode" in r]
-        assert "GL5 1HE" not in postcodes  # the slug recipient's postcode not in config
+        assert "SW1A 2AA" not in postcodes  # the slug recipient's postcode not in config
 
     def test_add_slug_recipient_gh_not_available_skips_option(self, tmp_path, monkeypatch, capsys):
         # When gh is unavailable, the secrets prompt should not appear; goes straight to postcode
