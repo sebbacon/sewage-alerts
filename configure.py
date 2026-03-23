@@ -51,6 +51,21 @@ def read_config(path: str = CONFIG_PATH) -> dict:
             "notify_email": data.pop("notify_email"),
         }]
     data.setdefault("recipients", [])
+
+    # Cast slug to str (yaml.safe_load parses purely numeric slugs as int)
+    for r in data.get("recipients", []):
+        if "slug" in r:
+            r["slug"] = str(r["slug"])
+
+    # Warn on duplicate slugs (e.g. from hand-editing)
+    slugs_seen = set()
+    for r in data.get("recipients", []):
+        slug = r.get("slug")
+        if slug is not None:
+            if slug in slugs_seen:
+                print(f"WARNING: duplicate slug '{slug}' in config", file=sys.stderr)
+            slugs_seen.add(slug)
+
     return data
 
 

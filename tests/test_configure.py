@@ -144,3 +144,46 @@ class TestReadConfig:
     def test_missing_file_returns_empty_recipients(self):
         result = configure.read_config("/nonexistent/config.yml")
         assert result == {"recipients": []}
+
+    def test_reads_slug_recipient(self, tmp_path):
+        f = tmp_path / "config.yml"
+        f.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            "  - slug: alice\n"
+            "    radius_km: 15\n"
+        )
+        result = configure.read_config(str(f))
+        r = result["recipients"][0]
+        assert r["slug"] == "alice"
+        assert isinstance(r["slug"], str)
+        assert r["radius_km"] == 15
+        assert "postcode" not in r
+
+    def test_numeric_slug_cast_to_str(self, tmp_path):
+        """yaml.safe_load parses slug: 123 as int; must be cast to str."""
+        f = tmp_path / "config.yml"
+        f.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            "  - slug: 123\n"
+            "    radius_km: 15\n"
+        )
+        result = configure.read_config(str(f))
+        assert result["recipients"][0]["slug"] == "123"
+        assert isinstance(result["recipients"][0]["slug"], str)
+
+    def test_duplicate_slug_warns(self, tmp_path, capsys):
+        f = tmp_path / "config.yml"
+        f.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            "  - slug: alice\n"
+            "    radius_km: 15\n"
+            "  - slug: alice\n"
+            "    radius_km: 20\n"
+        )
+        result = configure.read_config(str(f))
+        captured = capsys.readouterr()
+        assert "duplicate" in captured.err.lower() or "warning" in captured.err.lower()
+        assert len(result["recipients"]) == 2  # continues, does not abort
