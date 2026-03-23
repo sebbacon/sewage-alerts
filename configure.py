@@ -64,9 +64,13 @@ def write_config(
         f.write(f"lookback_hours: {lookback_hours}\n")
         f.write("recipients:\n")
         for r in recipients:
-            f.write(f'  - postcode: "{r["postcode"]}"\n')
-            f.write(f'    radius_km: {r["radius_km"]}\n')
-            f.write(f'    notify_email: "{r["notify_email"]}"\n')
+            if "slug" in r:
+                f.write(f'  - slug: {r["slug"]}\n')
+                f.write(f'    radius_km: {r["radius_km"]}\n')
+            else:
+                f.write(f'  - postcode: "{r["postcode"]}"\n')
+                f.write(f'    radius_km: {r["radius_km"]}\n')
+                f.write(f'    notify_email: "{r["notify_email"]}"\n')
 
 
 def _prompt(message: str, default: str = "") -> str:

@@ -76,6 +76,49 @@ class TestWriteConfig:
         assert len(result["recipients"]) == 2
         assert result["recipients"][1]["postcode"] == "SW1A 1AA"
 
+    def test_writes_slug_recipient(self, tmp_path):
+        config_path = str(tmp_path / "config.yml")
+        configure.write_config(
+            lookback_hours=24,
+            recipients=[{"slug": "alice", "radius_km": 15}],
+            path=config_path,
+        )
+        with open(config_path) as f:
+            result = yaml.safe_load(f)
+        assert len(result["recipients"]) == 1
+        r = result["recipients"][0]
+        assert r["slug"] == "alice"
+        assert r["radius_km"] == 15
+        assert "postcode" not in r
+        assert "notify_email" not in r
+
+    def test_writes_slug_first_on_dash_line(self, tmp_path):
+        """slug must be first field so check_spills.py hand-rolled parser finds it."""
+        config_path = str(tmp_path / "config.yml")
+        configure.write_config(
+            lookback_hours=24,
+            recipients=[{"slug": "alice", "radius_km": 15}],
+            path=config_path,
+        )
+        with open(config_path) as f:
+            content = f.read()
+        assert "  - slug: alice" in content
+
+    def test_writes_mixed_recipients(self, tmp_path):
+        config_path = str(tmp_path / "config.yml")
+        configure.write_config(
+            lookback_hours=24,
+            recipients=[
+                {"slug": "alice", "radius_km": 15},
+                {"postcode": "SW1A 1AA", "radius_km": 20, "notify_email": "b@example.com"},
+            ],
+            path=config_path,
+        )
+        with open(config_path) as f:
+            result = yaml.safe_load(f)
+        assert result["recipients"][0]["slug"] == "alice"
+        assert result["recipients"][1]["postcode"] == "SW1A 1AA"
+
 
 class TestReadConfig:
     def test_reads_multi_recipient_format(self, tmp_path):
