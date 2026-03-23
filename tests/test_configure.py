@@ -187,3 +187,74 @@ class TestReadConfig:
         captured = capsys.readouterr()
         assert "duplicate" in captured.err.lower() or "warning" in captured.err.lower()
         assert len(result["recipients"]) == 2  # continues, does not abort
+
+
+class TestPatchWorkflowEnv:
+    WORKFLOW_BASE = (
+        "name: Check sewage spills\n"
+        "on:\n"
+        "  schedule:\n"
+        "    - cron: '0 7 * * *'\n"
+        "jobs:\n"
+        "  check:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: Check for nearby spills\n"
+        "        run: python check_spills.py\n"
+        "        env:\n"
+        "          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}\n"
+        "          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}\n"
+    )
+
+    def test_no_slugs_keeps_fixed_keys(self, tmp_path):
+        wf = tmp_path / "check_spills.yml"
+        wf.write_text(self.WORKFLOW_BASE)
+        configure.patch_workflow_env([], str(wf))
+        result = wf.read_text()
+        assert "GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}" in result
+        assert "GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}" in result
+        assert "RECIPIENT_" not in result
+
+    def test_adds_slug_env_vars(self, tmp_path):
+        wf = tmp_path / "check_spills.yml"
+        wf.write_text(self.WORKFLOW_BASE)
+        configure.patch_workflow_env(["alice"], str(wf))
+        result = wf.read_text()
+        assert "RECIPIENT_ALICE_POSTCODE: ${{ secrets.RECIPIENT_ALICE_POSTCODE }}" in result
+        assert "RECIPIENT_ALICE_EMAIL: ${{ secrets.RECIPIENT_ALICE_EMAIL }}" in result
+
+    def test_adds_multiple_slugs(self, tmp_path):
+        wf = tmp_path / "check_spills.yml"
+        wf.write_text(self.WORKFLOW_BASE)
+        configure.patch_workflow_env(["alice", "bob"], str(wf))
+        result = wf.read_text()
+        assert "RECIPIENT_ALICE_POSTCODE" in result
+        assert "RECIPIENT_BOB_EMAIL" in result
+
+    def test_removes_old_slugs_on_rewrite(self, tmp_path):
+        """Calling with empty slugs removes previously injected RECIPIENT_ vars."""
+        wf = tmp_path / "check_spills.yml"
+        initial = self.WORKFLOW_BASE + (
+            "          RECIPIENT_ALICE_POSTCODE: ${{ secrets.RECIPIENT_ALICE_POSTCODE }}\n"
+            "          RECIPIENT_ALICE_EMAIL: ${{ secrets.RECIPIENT_ALICE_EMAIL }}\n"
+        )
+        wf.write_text(initial)
+        configure.patch_workflow_env([], str(wf))
+        result = wf.read_text()
+        assert "RECIPIENT_ALICE" not in result
+
+    def test_file_ends_with_single_newline(self, tmp_path):
+        wf = tmp_path / "check_spills.yml"
+        wf.write_text(self.WORKFLOW_BASE)
+        configure.patch_workflow_env(["alice"], str(wf))
+        raw = wf.read_text()
+        assert raw.endswith("\n")
+        assert not raw.endswith("\n\n")
+
+    def test_slugs_uppercased(self, tmp_path):
+        wf = tmp_path / "check_spills.yml"
+        wf.write_text(self.WORKFLOW_BASE)
+        configure.patch_workflow_env(["MySlug"], str(wf))
+        result = wf.read_text()
+        assert "RECIPIENT_MYSLUG_POSTCODE" in result
+        assert "RECIPIENT_myslug" not in result

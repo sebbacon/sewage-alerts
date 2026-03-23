@@ -35,6 +35,25 @@ def patch_workflow_cron(cron_expr: str, workflow_path: str = WORKFLOW_PATH) -> N
         f.write(new_content)
 
 
+def patch_workflow_env(slugs: list[str], workflow_path: str = WORKFLOW_PATH) -> None:
+    """Rewrite the env: block under 'Check for nearby spills' step."""
+    lines = [
+        "        env:\n",
+        "          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}\n",
+        "          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}\n",
+    ]
+    for slug in slugs:
+        s = slug.upper()
+        lines.append(f"          RECIPIENT_{s}_POSTCODE: ${{{{ secrets.RECIPIENT_{s}_POSTCODE }}}}\n")
+        lines.append(f"          RECIPIENT_{s}_EMAIL: ${{{{ secrets.RECIPIENT_{s}_EMAIL }}}}\n")
+    replacement = "".join(lines)
+    with open(workflow_path) as f:
+        content = f.read()
+    new_content = re.sub(r"        env:.*", replacement.rstrip("\n"), content, flags=re.DOTALL)
+    with open(workflow_path, "w") as f:
+        f.write(new_content + "\n")
+
+
 def read_config(path: str = CONFIG_PATH) -> dict:
     """Read configuration from a YAML file."""
     try:
