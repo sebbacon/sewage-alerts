@@ -463,7 +463,7 @@ class TestConfigureMainFinal:
         monkeypatch.setattr("configure.patch_workflow_cron", lambda *a, **kw: None)
         monkeypatch.setattr(
             "configure.patch_workflow_env",
-            lambda slugs, workflow_path=None: calls.append(slugs),
+            lambda slugs, workflow_path=None: calls.append((slugs, workflow_path)),
         )
         monkeypatch.setattr(
             "configure.read_config",
@@ -476,7 +476,31 @@ class TestConfigureMainFinal:
 
         configure.main()
 
-        assert calls == [["alice"]]
+        assert calls == [(["alice"], configure.WORKFLOW_PATH)]
+
+    def test_patch_workflow_env_called_with_empty_slugs(self, tmp_path, monkeypatch):
+        """patch_workflow_env is called with empty slugs list when config has no slug recipients."""
+        workflow = self._make_workflow(tmp_path)
+
+        calls = []
+        monkeypatch.setattr("configure.write_config", lambda *a, **kw: None)
+        monkeypatch.setattr("configure.patch_workflow_cron", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            "configure.patch_workflow_env",
+            lambda slugs, workflow_path=None: calls.append((slugs, workflow_path)),
+        )
+        monkeypatch.setattr(
+            "configure.read_config",
+            lambda path=None: {"recipients": [{"postcode": "GL5 1HE", "radius_km": 20, "notify_email": "a@b.com"}]},
+        )
+        monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
+
+        inputs = iter(["3", "7", "d"])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+        configure.main()
+
+        assert calls == [([], configure.WORKFLOW_PATH)]
 
     def test_remove_slug_prints_cleanup_hint(self, tmp_path, monkeypatch, capsys):
         """Removing a slug recipient prints a cleanup note."""
@@ -545,3 +569,4 @@ class TestConfigureMainFinal:
         configure.main()
         captured = capsys.readouterr()
         assert "RECIPIENT_ALICE_POSTCODE" in captured.out
+        assert "Secrets already set this session:" in captured.out
