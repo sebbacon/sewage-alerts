@@ -102,7 +102,7 @@ class TestWriteConfig:
         )
         with open(config_path) as f:
             content = f.read()
-        assert "  - slug: alice" in content
+        assert '  - slug: "alice"' in content
 
     def test_writes_mixed_recipients(self, tmp_path):
         config_path = str(tmp_path / "config.yml")

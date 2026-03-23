@@ -65,7 +65,7 @@ def write_config(
         f.write("recipients:\n")
         for r in recipients:
             if "slug" in r:
-                f.write(f'  - slug: {r["slug"]}\n')
+                f.write(f'  - slug: "{r["slug"]}"\n')
                 f.write(f'    radius_km: {r["radius_km"]}\n')
             else:
                 f.write(f'  - postcode: "{r["postcode"]}"\n')
