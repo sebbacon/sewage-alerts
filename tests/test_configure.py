@@ -211,7 +211,6 @@ class TestConfigureMainSlugDisplay:
         monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
         monkeypatch.setattr("configure.CONFIG_PATH", str(config))
         monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
-        # Patch read_config to use the test config
         original_read_config = configure.read_config
         monkeypatch.setattr("configure.read_config", lambda path=None: original_read_config(str(config)))
         configure.main()
@@ -239,7 +238,6 @@ class TestConfigureMainSlugDisplay:
         monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
         monkeypatch.setattr("configure.CONFIG_PATH", str(config))
         monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
-        # Patch read_config to use the test config
         original_read_config = configure.read_config
         monkeypatch.setattr("configure.read_config", lambda path=None: original_read_config(str(config)))
         configure.main()

@@ -164,7 +164,7 @@ def main() -> None:
                 r = recipients[n]
                 if "slug" in r:
                     slug_upper = r["slug"].upper()
-                    print(f"Note: postcode and email are stored in GitHub Secrets.")
+                    print("Note: postcode and email are stored in GitHub Secrets.")
                     print(f"To update them run:")
                     print(f"  gh secret set RECIPIENT_{slug_upper}_POSTCODE")
                     print(f"  gh secret set RECIPIENT_{slug_upper}_EMAIL")
