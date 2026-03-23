@@ -2,6 +2,8 @@
 """Interactive setup script for sewage alerts."""
 
 import re
+import shutil
+import subprocess
 import sys
 import yaml
 
@@ -115,6 +117,7 @@ def _prompt(message: str, default: str = "") -> str:
 
 def main() -> None:
     print("Welcome to Sewage Alerts setup!\n")
+    gh_available = bool(shutil.which("gh"))
 
     print("Check interval:")
     print("  1) Every 6 hours")
@@ -140,8 +143,9 @@ def main() -> None:
             hour = int(_prompt("Hour to run (UTC, 0-23)", "7"))
         cron_expr, lookback_hours = build_cron_and_hours(choice, hour=hour)
 
-    recipients = read_config().get("recipients", [])
+    recipients = read_config(CONFIG_PATH).get("recipients", [])
 
+    new_slugs_this_session = []
     while True:
         print("\nCurrent recipients:")
         if recipients:
@@ -154,10 +158,46 @@ def main() -> None:
             print("  (none)")
         choice_r = input("\n[a]dd  [e]dit N  [r]emove N  [d]one: ").strip().lower()
         if choice_r == "a":
-            postcode = _prompt("Postcode")
             radius_km = int(_prompt("Radius (km)", "20"))
-            email = _prompt("Email")
-            recipients.append({"postcode": postcode, "radius_km": radius_km, "notify_email": email})
+            use_secrets = False
+            if gh_available:
+                use_secrets = input("Store postcode and email in GitHub Secrets? [y/N]: ").strip().lower() == "y"
+            if use_secrets:
+                # Prompt for and validate slug
+                while True:
+                    slug = _prompt("Slug (letters, digits, underscores only)")
+                    if not re.match(r'^[A-Za-z0-9_]+$', slug):
+                        print("Invalid slug: use only letters, digits, underscores.")
+                        continue
+                    if any(r.get("slug") == slug for r in recipients):
+                        print(f"Slug '{slug}' already in use. Choose another.")
+                        continue
+                    break
+                postcode = _prompt("Postcode")
+                slug_upper = slug.upper()
+                result = subprocess.run(
+                    ["gh", "secret", "set", f"RECIPIENT_{slug_upper}_POSTCODE", "--body", postcode],
+                    capture_output=True,
+                )
+                if result.returncode != 0:
+                    print(f"ERROR: gh secret set failed: {result.stderr.decode()}", file=sys.stderr)
+                    continue
+                email = _prompt("Email")
+                result = subprocess.run(
+                    ["gh", "secret", "set", f"RECIPIENT_{slug_upper}_EMAIL", "--body", email],
+                    capture_output=True,
+                )
+                if result.returncode != 0:
+                    print(f"ERROR: gh secret set failed: {result.stderr.decode()}", file=sys.stderr)
+                    print(f"Note: RECIPIENT_{slug_upper}_POSTCODE was already set.", file=sys.stderr)
+                    print(f"Clean up with: gh secret delete RECIPIENT_{slug_upper}_POSTCODE", file=sys.stderr)
+                    continue
+                recipients.append({"slug": slug, "radius_km": radius_km})
+                new_slugs_this_session.append(slug)
+            else:
+                postcode = _prompt("Postcode")
+                email = _prompt("Email")
+                recipients.append({"postcode": postcode, "radius_km": radius_km, "notify_email": email})
         elif choice_r.startswith("e"):
             try:
                 n = int(choice_r[1:].strip()) - 1
@@ -190,10 +230,10 @@ def main() -> None:
             else:
                 break
 
-    write_config(lookback_hours, recipients)
+    write_config(lookback_hours, recipients, path=CONFIG_PATH)
     print(f"\n✓ Written {CONFIG_PATH}")
 
-    patch_workflow_cron(cron_expr)
+    patch_workflow_cron(cron_expr, workflow_path=WORKFLOW_PATH)
     print(f"✓ Updated {WORKFLOW_PATH}")
 
     print(f"""

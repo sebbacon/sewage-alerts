@@ -2,6 +2,7 @@ import re
 import pytest
 import yaml
 import configure
+from unittest.mock import MagicMock
 
 
 class TestBuildCronAndHours:
@@ -315,3 +316,126 @@ class TestPatchWorkflowEnv:
         result = wf.read_text()
         assert "RECIPIENT_MYSLUG_POSTCODE" in result
         assert "RECIPIENT_myslug" not in result
+
+
+class TestAddSlugRecipient:
+    def _run_add(self, tmp_path, monkeypatch, inputs, gh_available=True, gh_returncode=0):
+        """Helper to run configure.main() with mocked input and gh."""
+        config = tmp_path / "config.yml"
+        config.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            '  - postcode: "GL5 1HE"\n'
+            "    radius_km: 20\n"
+            '    notify_email: "a@b.com"\n'
+        )
+        workflow = tmp_path / "check_spills.yml"
+        workflow.write_text(
+            "    - cron: '0 7 * * *'\n"
+            "        env:\n"
+            "          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}\n"
+            "          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}\n"
+        )
+        monkeypatch.setattr("configure.CONFIG_PATH", str(config))
+        monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+        monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh" if gh_available else None)
+        mock_result = MagicMock()
+        mock_result.returncode = gh_returncode
+        mock_result.stderr = b"some error" if gh_returncode != 0 else b""
+        monkeypatch.setattr("subprocess.run", lambda *a, **kw: mock_result)
+        configure.main()
+        return yaml.safe_load(config.read_text())
+
+    def test_add_slug_recipient_stores_slug_not_pii(self, tmp_path, monkeypatch):
+        inputs = iter([
+            "3",        # daily schedule
+            "",         # accept default hour (7)
+            "a",        # add recipient
+            "15",       # radius
+            "y",        # use secrets
+            "alice",    # slug
+            "GL5 1HE",  # postcode (sent to gh, not stored)
+            "a@b.com",  # email (sent to gh, not stored)
+            "d",        # done
+        ])
+        result = self._run_add(tmp_path, monkeypatch, inputs)
+        slugs = [r.get("slug") for r in result["recipients"] if "slug" in r]
+        assert "alice" in slugs
+        postcodes = [r.get("postcode") for r in result["recipients"] if "postcode" in r]
+        assert "GL5 1HE" not in postcodes  # the slug recipient's postcode not in config
+
+    def test_add_slug_recipient_gh_not_available_skips_option(self, tmp_path, monkeypatch, capsys):
+        # When gh is unavailable, the secrets prompt should not appear; goes straight to postcode
+        inputs = iter([
+            "3",
+            "",          # accept default hour
+            "a",
+            "15",
+            "SW1A 2AA",  # postcode directly (no secrets prompt)
+            "c@d.com",
+            "d",
+        ])
+        result = self._run_add(tmp_path, monkeypatch, inputs, gh_available=False)
+        # new recipient is plaintext
+        new = [r for r in result["recipients"] if r.get("postcode") == "SW1A 2AA"]
+        assert len(new) == 1
+
+    def test_invalid_slug_reprompts(self, tmp_path, monkeypatch, capsys):
+        inputs = iter([
+            "3",
+            "",          # accept default hour
+            "a",
+            "15",
+            "y",
+            "bad-slug",  # invalid (hyphen)
+            "goodslug",  # valid on retry
+            "GL5 1HE",
+            "a@b.com",
+            "d",
+        ])
+        result = self._run_add(tmp_path, monkeypatch, inputs)
+        captured = capsys.readouterr()
+        assert "goodslug" in [r.get("slug") for r in result["recipients"] if "slug" in r]
+
+    def test_duplicate_slug_reprompts(self, tmp_path, monkeypatch, capsys):
+        # Start with existing slug alice in config
+        config = tmp_path / "config.yml"
+        config.write_text(
+            "lookback_hours: 24\n"
+            "recipients:\n"
+            "  - slug: alice\n"
+            "    radius_km: 15\n"
+        )
+        workflow = tmp_path / "check_spills.yml"
+        workflow.write_text(
+            "    - cron: '0 7 * * *'\n"
+            "        env:\n"
+            "          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}\n"
+            "          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}\n"
+        )
+        monkeypatch.setattr("configure.CONFIG_PATH", str(config))
+        monkeypatch.setattr("configure.WORKFLOW_PATH", str(workflow))
+        monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/gh")
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = b""
+        monkeypatch.setattr("subprocess.run", lambda *a, **kw: mock_result)
+        inputs = iter([
+            "3",
+            "",         # accept default hour
+            "a",
+            "20",
+            "y",
+            "alice",    # duplicate — should be rejected
+            "bob",      # unique — accepted
+            "SW1A 2AA",
+            "b@b.com",
+            "d",
+        ])
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+        configure.main()
+        result = yaml.safe_load(config.read_text())
+        slugs = [r.get("slug") for r in result["recipients"] if "slug" in r]
+        assert "bob" in slugs
+        assert slugs.count("alice") == 1  # original, not duplicated
